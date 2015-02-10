@@ -45,7 +45,7 @@ if __name__ == "__main__":
     #checker_board_image.save("checker_board_1_by_1.png")
     #checker_board_image = create_checker_board([2, 2], [360, 640])
     #checker_board_image.save("checker_board_2_by_2.png")
-    checker_board_image = create_checker_board([4, 4], [180, 320])
+    checker_board_image = create_checker_board([128, 128], [4, 4])
     checker_board_image.save("checker_board_4_by_4.png")
 
 
