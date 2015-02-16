@@ -18,11 +18,11 @@ each projector pixel.
 DEBUG = True
 
 if DEBUG:
-    from numpy import arctan, arctan2, arccos, pi, where
+    from numpy import arctan, arctan2, arccos, where
     import matplotlib.pyplot as plot
     from matplotlib.backends.backend_pdf import PdfPages
 
-from numpy import array, ones, zeros, dstack, linalg, dot
+from numpy import array, ones, zeros, dstack, linalg, dot, sin, cos, pi
 from numpy import sqrt, imag
 from numpy import uint8
 from random import randint
@@ -135,7 +135,7 @@ class DomeProjection:
         self._camera_view_directions = \
             flat_display_directions(screen_height, screen_width,
                                     image_pixel_height, image_pixel_width,
-                                    distance_to_screen)
+                                    distance_to_screen, phi = 0)
 
         """
         Calculate the unit vectors (directions) from the animal inside the dome
@@ -375,6 +375,9 @@ class DomeProjection:
         pixel.  
         """
 
+        # this is a hack for now
+        phi = 28.0*pi/180.0
+
         # This 2D list of lists contains the list of OpenGL pixels
         # that contribute to each projector pixel.
         contributing_pixels = \
@@ -394,14 +397,16 @@ class DomeProjection:
                         the animal for now
                         """
                         # calculate the magnitude required to hit the screen
-                        magnitude = self._distance_to_screen / direction[1]
-                        z_component = magnitude * direction[2]
-                        x_component = magnitude * direction[0]
-                        # calculate row and column of closest OpenGL pixel
-                        r = int((self._image_pixel_height - 1)
-                                * (1 - z_component / self._screen_height - 0.5))
+                        direction_to_screen = array([0, cos(phi), sin(phi)])
+                        magnitude = (self._distance_to_screen /
+                                     direction.dot(direction_to_screen))
+                        z = magnitude * direction[2]
+                        x = magnitude * direction[0]
+                        r = int(((self._distance_to_screen*sin(phi) - z)
+                             / (self._screen_height * cos(phi)) + 0.5)
+                             * (self._image_pixel_height - 1))
                         c = int((self._image_pixel_width - 1)
-                                * (x_component / self._screen_width + 0.5))
+                                * (x / self._screen_width + 0.5))
                         # make sure the pixel is inside the OpenGL image and the 
                         if (r >= 0 and r < self._image_pixel_height
                             and c >= 0 and c < self._image_pixel_width):
@@ -759,12 +764,17 @@ class DomeProjection:
 
 def flat_display_directions(screen_height, screen_width, pixel_height,
                             pixel_width, distance_to_screen,
-                            vertical_offset = 0):
+                            vertical_offset = 0, phi = 0):
     """
     Return unit vectors that point from the viewer towards each pixel
     on a flat screen display.  The display is along the positive y-axis
     relative to the viewer.  The positive x-axis is to the viewer's right
     and the positive z-axis is up.
+
+    vertical_offset shifts the screen in the z-direction
+
+    phi is the angle between the vector from the origin to the center of the
+    image and the x-y plane
     """
     # Make matrices of projector row and column values
     rows = array([[float(i)]*pixel_width for i in
@@ -776,12 +786,17 @@ def flat_display_directions(screen_height, screen_width, pixel_height,
     Calculate x and z values from column and row values so they
     are symmetric about the center of the image and scaled to the
     screen size.
+    Also shift the z-values by z-offset and adjust y and z for rotation by phi.
     """
+
     x = screen_width*(columns/(pixel_width - 1) - 0.5)
-    z = -screen_height*(rows/(pixel_height - 1) - 0.5) + vertical_offset
+    z = (distance_to_screen * sin(phi)
+         + (0.5 - rows/(pixel_height - 1)) * screen_height * cos(phi)
+         + vertical_offset)
 
     # y is the distance from the viewer to the screen
-    y = distance_to_screen
+    y = (distance_to_screen * cos(phi)
+         + (rows/(pixel_height - 1) - 0.5) * screen_height * sin(phi))
     r = sqrt(x**2 + y**2 + z**2)
 
     return dstack([x/r, y/r, z/r])

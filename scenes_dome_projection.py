@@ -9,15 +9,15 @@ from dome_projection import DomeProjection
 from os import listdir
 
 
-directory = "scenes/"
+directory = "scenes28/"
 filenames = listdir(directory)
 
 print "Creating instance of DomeProjection Class"
 dome = DomeProjection(screen_height = 1.0,
-                      screen_width = 1.6,
+                      screen_width = 1.0,
                       distance_to_screen = 0.5,
-                      image_pixel_width=1680,
-                      image_pixel_height=1050,
+                      image_pixel_width=1280,
+                      image_pixel_height=720,
                       projector_pixel_width=1280,
                       projector_pixel_height=720)
 print "Done initializing dome"
