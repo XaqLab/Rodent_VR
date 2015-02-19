@@ -2,17 +2,17 @@
 # written for python 2.7.8
 
 """
-This is the mapping to project images from OpenGL onto the hemispherical dome
-display for animal virtual reality experiments.  The objective of this mapping
-is to ensure that the OpenGL image and the image on the dome display look the
-same from the viewer's point of view.  For the dome display the viewer is the
-animal and for the OpenGL image the viewer is a virtual camera.  Each projector
-pixel projects to a small region seen by the animal.  The RGB values for each
-projector pixel are calculated from pixels in the OpenGL image such that the
-pixels in the OpenGL image and the corresponding region seen by the animal are
-in the same direction.  A mapping from projector pixels to the animal's
-viewpoint is used to determine which pixels in the OpenGL image contribute to
-each projector pixel.  
+This class modifies (a.k.a. warps) images from OpenGL for display on a
+hemispherical screen in a virtual reality system.  A hemispherical mirror is
+used to allow a single projector to achieve a very wide field of view.  The
+goal in our mouse experiments is to achieve a minimum field of view of -20
+degrees to 60 degrees verically and 270 degrees horizontally.  The OpenGL
+images are modified to eliminate the distortion introduced by the hemispherical
+mirror and the hemispherical screen.  This is achieved by a pixel level mapping
+which sets the RGB values for each projector pixel using the RGB values of
+the pixel in the OpenGL image which is in the same direction from the viewer's
+point of view.  The viewer in the dome display is the mouse and the viewer in
+OpenGL is a virtual camera.  
 """
 
 DEBUG = True
@@ -22,8 +22,8 @@ if DEBUG:
     import matplotlib.pyplot as plot
     from matplotlib.backends.backend_pdf import PdfPages
 
-from numpy import array, ones, zeros, dstack, linalg, dot, sin, cos, pi
-from numpy import sqrt, imag
+from numpy import array, ones, zeros, dstack, linalg, dot, cross
+from numpy import sqrt, sin, cos, tan, pi
 from numpy import uint8
 from random import randint
 from PIL import Image
@@ -38,13 +38,16 @@ class DomeProjection:
     hemispherical mirror.
     """
     def __init__(self,
-                 screen_height = 0.9,
-                 screen_width = 1.6,
-                 distance_to_screen = 0.5,
-                 image_pixel_height = 90,
-                 image_pixel_width = 160,
-                 projector_pixel_height = 90,
-                 projector_pixel_width = 160,
+                 screen_height = [1.0, 1.0, 1.0],
+                 screen_width = [1.0, 1.0, 1.0],
+                 distance_to_screen = [0.5, 0.5, 0.5],
+                 pitch = [28, 28, 28],
+                 yaw = [-90, 0, 90],
+                 roll = [0, 0, 0],
+                 image_pixel_height = [512, 512, 512],
+                 image_pixel_width = [512, 512, 512],
+                 projector_pixel_height = 720,
+                 projector_pixel_width = 1280,
                  first_projector_image = [[-0.080, 0.436, 0.137],
                                           [0.080, 0.436, 0.137],
                                           [0.080, 0.436, 0.043],
@@ -63,16 +66,25 @@ class DomeProjection:
         Parameters:
         ----------------------------
         @param screen_height:
-            The height of the OpenGL screen in arbitrary units.
+            A list of the heights of each OpenGL screen in arbitrary units.
         @param screen_width:
-            The width of the OpenGL screen in arbitrary units.
+            A list of the widths of each OpenGL screen in arbitrary units.
         @param distance_to_screen:
-            The distance from OpenGL's virtual camera to the OpenGL screen in
-            arbitrary units.
+            A list of the distances from each OpenGL virtual camera to its
+            respective screen in arbitrary units.
+        @param pitch:
+            A list of the angles between the xy plane and each camera's viewing
+            direction in degrees (the pitch in aeronautical terms).
+        @param yaw:
+            A list of the angles in the xy plane between each camera's viewing
+            direction and the y-axis (the yaw in aeronautical terms).
+        @param roll:
+            A list of the angles of rotation of each camera image relative to
+            the xy plane (the roll in aeronautical terms).
         @param image_pixel_height:
-            The number of vertical pixels in the OpenGL image.
+            A list of the number of vertical pixels in each OpenGL image.
         @param image_pixel_width:
-            The number of horizontal pixels in the OpenGL image.
+            A list of the number of horizontal pixels in each OpenGL image.
         @param projector_pixel_height:
             The number of vertical pixels in the projector image.
         @param projector_pixel_width:
@@ -103,6 +115,9 @@ class DomeProjection:
         self._screen_height = screen_height
         self._screen_width = screen_width
         self._distance_to_screen = distance_to_screen
+        self._pitch = [i * pi/180.0 for i in pitch]
+        self._yaw = [i * pi/180.0 for i in yaw]
+        self._roll = [i * pi/180.0 for i in roll]
         self._image_pixel_height = image_pixel_height
         self._image_pixel_width = image_pixel_width
         self._projector_pixel_height = projector_pixel_height
@@ -125,6 +140,39 @@ class DomeProjection:
         #######################################################################
         # Properties calculated from arguments
         #######################################################################
+        """
+        Calculate the vectors to the center of each screen along with unit
+        vectors that indicate the directions for increasing row and column
+        numbers. These vectors will make it very easy to calculate the row and
+        column of a pixel given the direction from the viewer to that pixel.
+        """
+        self._vector_to_screen = []
+        self._row_vector = []
+        self._col_vector = []
+        for screen in range(len(distance_to_screen)):
+            yaw = self._yaw[screen]
+            pitch = self._pitch[screen]
+            roll = self._roll[screen]
+            x = (distance_to_screen[screen] * sin(yaw) * cos(pitch))
+            y = (distance_to_screen[screen] * cos(yaw) * cos(pitch))
+            z = distance_to_screen[screen] * sin(pitch)
+            self._vector_to_screen.append(array([x, y, z]))
+            # Create a column vector that will be used as a basis vector to
+            # find the column number of pixels in images from this camera.
+            # Supporting image rotation makes this a bit confusing.  When
+            # roll=0, the cross product is between vector_to_screen and
+            # [0, 0, 1], the unit vector in the positive z direction.
+            col_vector = cross(self._vector_to_screen[screen],
+                               array([sin(roll)*cos(yaw),
+                                      sin(roll)*sin(yaw),
+                                      cos(roll)]))
+            col_vector = col_vector / linalg.norm(col_vector)
+            self._col_vector.append(col_vector)
+            # Create a row vector that will be used as a basis vector to
+            # find the row number of pixels in images from this camera.
+            row_vector = cross(self._vector_to_screen[screen], col_vector)
+            row_vector = row_vector / linalg.norm(row_vector)
+            self._row_vector.append(row_vector)
 
         """
         Calculate the unit vectors (aka directions) that point from
@@ -133,9 +181,12 @@ class DomeProjection:
         is looking down the positive y-axis.
         """
         self._camera_view_directions = \
-            flat_display_directions(screen_height, screen_width,
-                                    image_pixel_height, image_pixel_width,
-                                    distance_to_screen, phi = 0)
+            flat_display_directions(screen_height[0],
+                                    screen_width[0],
+                                    image_pixel_height[0],
+                                    image_pixel_width[0],
+                                    distance_to_screen[0],
+                                    self._pitch[0])
 
         """
         Calculate the unit vectors (directions) from the animal inside the dome
@@ -371,46 +422,74 @@ class DomeProjection:
     def _calc_contributing_pixels(self):
         """
         Use the direction for each projector pixel to calculate the nearest
-        pixel in the OpenGL image and use its RGB values for the projector
-        pixel.  
+        OpenGL pixel and use its RGB values for the projector pixel.  
         """
-
-        # this is a hack for now
-        phi = 28.0*pi/180.0
 
         # This 2D list of lists contains the list of OpenGL pixels
         # that contribute to each projector pixel.
         contributing_pixels = \
             [[[] for i in range(self._projector_pixel_width)]
              for j in range(self._projector_pixel_height)]
+        # Calculate center pixels, pixel spacing and direction vectors for each
+        # screen.
+        screens = range(len(self._distance_to_screen))
+        row_center = [self._image_pixel_height[i] / 2 for i in screens]
+        row_spacing = [float(self._screen_height[i])
+                            / self._image_pixel_height[i] for i in screens]
+        col_center = [self._image_pixel_width[i] / 2 for i in screens]
+        col_spacing = [float(self._screen_width[i])
+                            / self._image_pixel_width[i] for i in screens]
+        vector_to_screen = self._vector_to_screen
+        distance_to_screen = [linalg.norm(v) for v in vector_to_screen]
+        direction_to_screen = [vector_to_screen[i] / distance_to_screen[i]
+                               for i in screens]
         for row in range(self._projector_pixel_height):
             for col in range(self._projector_pixel_width):
                 if self._projector_mask[row, col] == 1:
                     """
-                    For each projector pixel that hits the mirror, determine
-                    which OpenGL image pixel has the closest direction.
+                    For each projector pixel that hits the mirror, use the
+                    direction in which the animal sees this pixel to find the
+                    OpenGL pixel which has the closest direction from the
+                    virtual camera's point of view.  The RGB values of this
+                    OpenGL pixel will be used for this projector pixel.
                     """
+                    # Calculate the magnitude required for a vector in this
+                    # direction to hit the nearest OpenGL screen.
                     direction = self._animal_view_directions[row, col]
-                    if direction[1] > 0:
+                    # Find the nearest OpenGL screen
+                    screen = 0
+                    direction_dot_direction_to_screen = 0
+                    for i in screens:
+                        dp = direction.dot(direction_to_screen[i])
+                        if dp > direction_dot_direction_to_screen:
+                            direction_dot_direction_to_screen = dp
+                            screen = i
+                    if direction_dot_direction_to_screen > 0:
                         """
-                        limit ourselves to pixels that project in front of
-                        the animal for now
+                        Ignore cases where the dot product of direction and
+                        direction_to_screen is negative.  These cases project
+                        the image to a second, incorrect location on the dome.
                         """
-                        # calculate the magnitude required to hit the screen
-                        direction_to_screen = array([0, cos(phi), sin(phi)])
-                        magnitude = (self._distance_to_screen /
-                                     direction.dot(direction_to_screen))
-                        z = magnitude * direction[2]
+                        # Calculate the full vector from the unit vector in this
+                        # direction and use it to find the row and column numbers
+                        # of the OpenGL pixel.
+                        magnitude = (distance_to_screen[screen]
+                                     / direction_dot_direction_to_screen)
                         x = magnitude * direction[0]
-                        r = int(((self._distance_to_screen*sin(phi) - z)
-                             / (self._screen_height * cos(phi)) + 0.5)
-                             * (self._image_pixel_height - 1))
-                        c = int((self._image_pixel_width - 1)
-                                * (x / self._screen_width + 0.5))
-                        # make sure the pixel is inside the OpenGL image and the 
-                        if (r >= 0 and r < self._image_pixel_height
-                            and c >= 0 and c < self._image_pixel_width):
-                            contributing_pixels[row][col].append([r, c])
+                        y = magnitude * direction[1]
+                        z = magnitude * direction[2]
+                        on_screen_vector = (array([x, y, z])
+                                            - vector_to_screen[screen])
+                        r = (row_center[screen]
+                             + on_screen_vector.dot(self._row_vector[screen])
+                             / row_spacing[screen])
+                        c = (col_center[screen]
+                             + on_screen_vector.dot(self._col_vector[screen])
+                             / col_spacing[screen])
+                        # make sure the pixel is inside the OpenGL image
+                        if (r >= 0 and r < self._image_pixel_height[screen]
+                            and c >= 0 and c < self._image_pixel_width[screen]):
+                            contributing_pixels[row][col].append([screen, r, c])
 
         return contributing_pixels
 
@@ -706,23 +785,25 @@ class DomeProjection:
         plot.show()
 
 
-    def warp_image_for_dome(self, image):
+    def warp_image_for_dome(self, images):
         """
         Take an RGB input image intended for display on a flat screen and
         produce an image for the projector that removes the distortions caused
         by projecting the image onto the dome using a spherical mirror.
         """
-        assert image.size == (self._image_pixel_width,
-                              self._image_pixel_height)
+        pixels = []
+        for i, image in enumerate(images):
+            assert image.size == (self._image_pixel_width[i],
+                                  self._image_pixel_height[i])
+            pixels.append(array(image))
 
-        pixels = array(image)
         warped_pixels = zeros([self._projector_pixel_height,
                                self._projector_pixel_width, 3], dtype=uint8)
         for row in range(self._projector_pixel_height):
             for col in range(self._projector_pixel_width):
                 pixel_value = zeros(3)
                 for pixel in self._contributing_pixels[row][col]:
-                    pixel_value += pixels[pixel[0], pixel[1]]
+                    pixel_value += pixels[0][pixel[1], pixel[2]]
                 n = len(self._contributing_pixels[row][col])
                 if n > 0:
                     pixel_value = pixel_value/n
