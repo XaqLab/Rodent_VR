@@ -39,9 +39,9 @@ class DomeProjection:
     """
     def __init__(self,
                  screen_height = [1.0, 1.0, 1.0],
-                 screen_width = [1.0, 1.0, 1.0],
+                 screen_width = [1.4, 1.4, 1.4],
                  distance_to_screen = [0.5, 0.5, 0.5],
-                 pitch = [28, 28, 28],
+                 pitch = [30, 30, 30],
                  yaw = [-90, 0, 90],
                  roll = [0, 0, 0],
                  image_pixel_height = [512, 512, 512],
@@ -56,11 +56,12 @@ class DomeProjection:
                                            [0.115, 0.265, 0.186],
                                            [0.115, 0.265, 0.054],
                                            [-0.115, 0.265, 0.054]],
-                 mirror_radius = 0.223,
+                 mirror_radius = 0.2,
                  dome_center = [0, 0.138, 0.309],
                  dome_radius = 0.603,
                  animal_position = [0, 0.06, 0.61]
                  ):
+                 #mirror_radius = 0.223,
 
         """
         Parameters:
