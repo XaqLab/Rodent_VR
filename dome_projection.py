@@ -44,8 +44,8 @@ class DomeProjection:
                  pitch = [30, 30, 30],
                  yaw = [-90, 0, 90],
                  roll = [0, 0, 0],
-                 image_pixel_height = [512, 512, 512],
-                 image_pixel_width = [512, 512, 512],
+                 image_pixel_height = [200, 200, 200],
+                 image_pixel_width = [280, 280, 280],
                  projector_pixel_height = 720,
                  projector_pixel_width = 1280,
                  first_projector_image = [[-0.080, 0.436, 0.137],
@@ -804,7 +804,7 @@ class DomeProjection:
             for col in range(self._projector_pixel_width):
                 pixel_value = zeros(3)
                 for pixel in self._contributing_pixels[row][col]:
-                    pixel_value += pixels[0][pixel[1], pixel[2]]
+                    pixel_value += pixels[pixel[0]][pixel[1], pixel[2]]
                 n = len(self._contributing_pixels[row][col])
                 if n > 0:
                     pixel_value = pixel_value/n
