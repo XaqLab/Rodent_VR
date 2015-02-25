@@ -25,16 +25,19 @@ else:
 input_image.show()
 
 print "Creating instance of DomeProjection Class"
-dome = DomeProjection(screen_height = 1.0,
-                      screen_width = 1.0,
-                      distance_to_screen = 0.5,
-                      image_pixel_width=512,
-                      image_pixel_height=512,
+dome = DomeProjection(screen_height = [1.0],
+                      screen_width = [1.0],
+                      distance_to_screen = [0.5],
+                      pitch = [30],
+                      yaw = [0],
+                      roll = [0],
+                      image_pixel_width=[512],
+                      image_pixel_height=[512],
                       projector_pixel_width=1280,
                       projector_pixel_height=720)
 print "Done initializing dome"
 
-output_image = dome.warp_image_for_dome(input_image)
+output_image = dome.warp_image_for_dome([input_image])
 
 output_image.show()
 output_image.save(directory + "lenna_warped.png", "PNG")
