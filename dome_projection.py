@@ -56,7 +56,7 @@ class DomeProjection:
                                            [0.115, 0.265, 0.186],
                                            [0.115, 0.265, 0.054],
                                            [-0.115, 0.265, 0.054]],
-                 mirror_radius = 0.2,
+                 mirror_radius = 0.215,
                  dome_center = [0, 0.138, 0.309],
                  dome_radius = 0.603,
                  animal_position = [0, 0.06, 0.61]
