@@ -182,12 +182,14 @@ class DomeProjection:
         is looking down the positive y-axis.
         """
         self._camera_view_directions = \
-            flat_display_directions(screen_height[0],
-                                    screen_width[0],
-                                    image_pixel_height[0],
-                                    image_pixel_width[0],
-                                    distance_to_screen[0],
-                                    self._pitch[0])
+            [flat_display_directions(screen_height[i],
+                                     screen_width[i],
+                                     image_pixel_height[i],
+                                     image_pixel_width[i],
+                                     distance_to_screen[i],
+                                     phi = self._pitch[i],
+                                     yaw = self._yaw[i]) 
+             for i in range(len(screen_height))]
 
         """
         Calculate the unit vectors (directions) from the animal inside the dome
@@ -481,12 +483,12 @@ class DomeProjection:
                         z = magnitude * direction[2]
                         on_screen_vector = (array([x, y, z])
                                             - vector_to_screen[screen])
-                        r = (row_center[screen]
+                        r = int(round(row_center[screen]
                              + on_screen_vector.dot(self._row_vector[screen])
-                             / row_spacing[screen])
-                        c = (col_center[screen]
+                             / row_spacing[screen]))
+                        c = int(round(col_center[screen]
                              + on_screen_vector.dot(self._col_vector[screen])
-                             / col_spacing[screen])
+                             / col_spacing[screen]))
                         # make sure the pixel is inside the OpenGL image
                         if (r >= 0 and r < self._image_pixel_height[screen]
                             and c >= 0 and c < self._image_pixel_width[screen]):
@@ -531,7 +533,7 @@ class DomeProjection:
         return contributing_pixels
 
 
-    def _find_closest_projector_pixel(self, row, col):
+    def _find_closest_projector_pixel(self, image, row, col):
         """
         For the OpenGL image pixel specified by row and col use the directions
         in self._camera_view_directions and self._animal_view_directions to find the
@@ -539,7 +541,7 @@ class DomeProjection:
         column in a list.  This is done using a search method rather than
         calculating the dot product for every projector pixel.
         """
-        camera_direction = self._camera_view_directions[row, col]
+        camera_direction = self._camera_view_directions[image][row, col]
 
         # Start with the last projector pixel
         r = self._projector_pixel_row
@@ -813,30 +815,34 @@ class DomeProjection:
         return Image.fromarray(warped_pixels, mode='RGB')
 
 
-    def _project_warped_image_to_screen(self, warped_image):
+    def _unwarp_image(self, warped_image):
         """
-        Take an input image intended for projection onto a dome via a
-        spherical mirror and project it onto a flat screen.
+        Take an image intended for projection onto the dome and reconstruct the
+        images used to make it.
         """
         assert warped_image.size == (self._projector_pixel_width,
                                      self._projector_pixel_height)
 
         warped_pixels = array(warped_image)
-        pixels = zeros([self._image_pixel_height,
-                        self._image_pixel_width, 3], dtype=uint8)
-        for row in range(self._image_pixel_height):
-            for col in range(self._image_pixel_width):
-                """
-                For each image pixel, find the closest projector pixel
-                and use its RGB values.
-                """
-                projector_pixel = self._find_closest_projector_pixel(row, col)
-                pp_row = projector_pixel[0]
-                pp_col = projector_pixel[1]
-                if self._projector_mask[pp_row, pp_col] == 1:
-                    pixels[row, col] = warped_pixels[pp_row, pp_col]
+        pixels = [zeros([self._image_pixel_height[i],
+                         self._image_pixel_width[i], 3], dtype=uint8)
+                  for i in range(len(self._image_pixel_height))]
+        for image in range(len(self._image_pixel_height)):
+            for row in range(self._image_pixel_height[image]):
+                for col in range(self._image_pixel_width[image]):
+                    """
+                    For each image pixel, find the closest projector pixel
+                    and use its RGB values.
+                    """
+                    projector_pixel = self._find_closest_projector_pixel(image,
+                                                                         row, col)
+                    pp_row = projector_pixel[0]
+                    pp_col = projector_pixel[1]
+                    if self._projector_mask[pp_row, pp_col] == 1:
+                        pixels[image][row, col] = warped_pixels[pp_row, pp_col]
 
-        return Image.fromarray(pixels, mode='RGB')
+        return [Image.fromarray(pixels[i], mode='RGB') for i in
+                range(len(pixels))]
 
 
 
@@ -846,7 +852,7 @@ class DomeProjection:
 
 def flat_display_directions(screen_height, screen_width, pixel_height,
                             pixel_width, distance_to_screen,
-                            vertical_offset = 0, phi = 0):
+                            vertical_offset = 0, phi = 0, yaw = 0):
     """
     Return unit vectors that point from the viewer towards each pixel
     on a flat screen display.  The display is along the positive y-axis
@@ -858,7 +864,7 @@ def flat_display_directions(screen_height, screen_width, pixel_height,
     phi is the angle between the vector from the origin to the center of the
     image and the x-y plane
     """
-    # Make matrices of projector row and column values
+    # Make matrices of projector row and column values for each pixel
     rows = array([[float(i)]*pixel_width for i in
                   range(pixel_height)])
     columns = array([[float(i)]*pixel_height for i in
@@ -871,14 +877,21 @@ def flat_display_directions(screen_height, screen_width, pixel_height,
     Also shift the z-values by z-offset and adjust y and z for rotation by phi.
     """
 
-    x = screen_width*(columns/(pixel_width - 1) - 0.5)
-    z = (distance_to_screen * sin(phi)
-         + (0.5 - rows/(pixel_height - 1)) * screen_height * cos(phi)
-         + vertical_offset)
+    x_zero_yaw_zero_phi = screen_width * (columns/(pixel_width - 1) - 0.5)
+    y_zero_yaw_zero_phi = distance_to_screen
+    z_zero_yaw_zero_phi = (0.5 - rows/(pixel_height - 1)) * screen_height
+
+    x_zero_yaw = x_zero_yaw_zero_phi
+    y_zero_yaw = (y_zero_yaw_zero_phi * cos(phi)
+                  - z_zero_yaw_zero_phi * sin(phi))
+    z_zero_yaw = (z_zero_yaw_zero_phi * cos(phi) 
+                  + y_zero_yaw_zero_phi * sin(phi))
+
+    x = x_zero_yaw * cos(yaw) + y_zero_yaw * sin(yaw)
+    y = y_zero_yaw * cos(yaw) - x_zero_yaw * sin(yaw)
+    z = z_zero_yaw + vertical_offset
 
     # y is the distance from the viewer to the screen
-    y = (distance_to_screen * cos(phi)
-         + (rows/(pixel_height - 1) - 0.5) * screen_height * sin(phi))
     r = sqrt(x**2 + y**2 + z**2)
 
     return dstack([x/r, y/r, z/r])
