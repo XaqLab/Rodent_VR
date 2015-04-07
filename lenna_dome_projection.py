@@ -8,7 +8,8 @@ from PIL import Image
 from dome_projection import DomeProjection
 
 directory = "test_images/512_by_512/"
-input_image = Image.open(directory + "lenna.png")
+filename = "lenna.png"
+input_image = Image.open(directory + filename)
 
 # read pixel data from image into a list
 if input_image.mode == 'RGB':
@@ -40,6 +41,9 @@ print "Done initializing dome"
 output_image = dome.warp_image_for_dome([input_image])
 
 output_image.show()
-output_image.save(directory + "lenna_warped.png", "PNG")
+output_image.save(directory + "warped_" + filename, "PNG")
 
+unwarped_images = dome._unwarp_image(output_image)
+unwarped_images[0].show()
+unwarped_images[0].save(directory + "unwarped_" + filename, "PNG")
 
