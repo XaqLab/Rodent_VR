@@ -136,7 +136,7 @@ class DomeProjection:
 
         # Start search in the middle of the projector's bottom row of pixels
         self._projector_pixel_row = projector_pixel_height - 1
-        self._projector_pixel_col = projector_pixel_width/2
+        self._projector_pixel_col = projector_pixel_width/2.0
 
         #######################################################################
         # Properties calculated from arguments
@@ -248,7 +248,7 @@ class DomeProjection:
         # calculate vertical offset of image relative to projector
         projector_z = projector_focal_point[2]
 
-        vertical_offset = bottom_left_z - projector_z + image_height/2
+        vertical_offset = bottom_left_z - projector_z + image_height/2.0
 
         # calculate the directions for each projector pixel
         self._projector_pixel_directions = \
@@ -436,10 +436,10 @@ class DomeProjection:
         # Calculate center pixels, pixel spacing and direction vectors for each
         # screen.
         screens = range(len(self._distance_to_screen))
-        row_center = [self._image_pixel_height[i] / 2 for i in screens]
+        row_center = [(self._image_pixel_height[i] - 1) / 2.0 for i in screens]
         row_spacing = [float(self._screen_height[i])
                             / self._image_pixel_height[i] for i in screens]
-        col_center = [self._image_pixel_width[i] / 2 for i in screens]
+        col_center = [(self._image_pixel_width[i] - 1) / 2.0 for i in screens]
         col_spacing = [float(self._screen_width[i])
                             / self._image_pixel_width[i] for i in screens]
         vector_to_screen = self._vector_to_screen
@@ -828,11 +828,16 @@ class DomeProjection:
                          self._image_pixel_width[i], 3], dtype=uint8)
                   for i in range(len(self._image_pixel_height))]
         for image in range(len(self._image_pixel_height)):
-            for row in range(self._image_pixel_height[image]):
-                for col in range(self._image_pixel_width[image]):
+            row = 0
+            while row < self._image_pixel_height[image]:
+                columns = range(self._image_pixel_width[image])
+                for col in columns:
                     """
                     For each image pixel, find the closest projector pixel
                     and use its RGB values.
+                    Go through the pixels in a serpentine pattern so that the
+                    current pixel is always close to the last pixel.  This way the
+                    search algorithm can use the last result as its starting point.
                     """
                     projector_pixel = self._find_closest_projector_pixel(image,
                                                                          row, col)
@@ -840,6 +845,8 @@ class DomeProjection:
                     pp_col = projector_pixel[1]
                     if self._projector_mask[pp_row, pp_col] == 1:
                         pixels[image][row, col] = warped_pixels[pp_row, pp_col]
+                row = row + 1
+                columns.reverse()
 
         return [Image.fromarray(pixels[i], mode='RGB') for i in
                 range(len(pixels))]
@@ -877,9 +884,11 @@ def flat_display_directions(screen_height, screen_width, pixel_height,
     Also shift the z-values by z-offset and adjust y and z for rotation by phi.
     """
 
-    x_zero_yaw_zero_phi = screen_width * (columns/(pixel_width - 1) - 0.5)
+    x_zero_yaw_zero_phi = (screen_width / pixel_width
+                           * (columns + 0.5 - pixel_width/2.0))
     y_zero_yaw_zero_phi = distance_to_screen
-    z_zero_yaw_zero_phi = (0.5 - rows/(pixel_height - 1)) * screen_height
+    z_zero_yaw_zero_phi = (screen_height / pixel_height
+                           * (pixel_height/2.0 - (rows + 0.5)))
 
     x_zero_yaw = x_zero_yaw_zero_phi
     y_zero_yaw = (y_zero_yaw_zero_phi * cos(phi)
