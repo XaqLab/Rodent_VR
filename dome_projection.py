@@ -209,6 +209,70 @@ class DomeProjection:
     # Class methods
     ###########################################################################
 
+    def warp_image_for_dome(self, images):
+        """
+        Take an RGB input image intended for display on a flat screen and
+        produce an image for the projector that removes the distortions caused
+        by projecting the image onto the dome using a spherical mirror.
+        """
+        pixels = []
+        for i, image in enumerate(images):
+            assert image.size == (self._image_pixel_width[i],
+                                  self._image_pixel_height[i])
+            pixels.append(array(image))
+
+        warped_pixels = zeros([self._projector_pixel_height,
+                               self._projector_pixel_width, 3], dtype=uint8)
+        for row in range(self._projector_pixel_height):
+            for col in range(self._projector_pixel_width):
+                pixel_value = zeros(3)
+                for pixel in self._contributing_pixels[row][col]:
+                    pixel_value += pixels[pixel[0]][pixel[1], pixel[2]]
+                n = len(self._contributing_pixels[row][col])
+                if n > 0:
+                    pixel_value = pixel_value/n
+                warped_pixels[row][col] = array(pixel_value, dtype=uint8)
+
+        return Image.fromarray(warped_pixels, mode='RGB')
+
+
+    def _unwarp_image(self, warped_image):
+        """
+        Take an image intended for projection onto the dome and reconstruct the
+        images used to make it.
+        """
+        assert warped_image.size == (self._projector_pixel_width,
+                                     self._projector_pixel_height)
+
+        warped_pixels = array(warped_image)
+        pixels = [zeros([self._image_pixel_height[i],
+                         self._image_pixel_width[i], 3], dtype=uint8)
+                  for i in range(len(self._image_pixel_height))]
+        for image in range(len(self._image_pixel_height)):
+            row = 0
+            while row < self._image_pixel_height[image]:
+                columns = range(self._image_pixel_width[image])
+                for col in columns:
+                    """
+                    For each image pixel, find the closest projector pixel
+                    and use its RGB values.
+                    Go through the pixels in a serpentine pattern so that the
+                    current pixel is always close to the last pixel.  This way the
+                    search algorithm can use the last result as its starting point.
+                    """
+                    projector_pixel = self._find_closest_projector_pixel(image,
+                                                                         row, col)
+                    pp_row = projector_pixel[0]
+                    pp_col = projector_pixel[1]
+                    if self._projector_mask[pp_row, pp_col] == 1:
+                        pixels[image][row, col] = warped_pixels[pp_row, pp_col]
+                row = row + 1
+                columns.reverse()
+
+        return [Image.fromarray(pixels[i], mode='RGB') for i in
+                range(len(pixels))]
+
+
     def _dome_display_directions(self):
         """
         Return the unit vectors (directions) from the viewer inside the dome
@@ -686,6 +750,18 @@ class DomeProjection:
         print bottom_phi, "-", top_phi, "=", bottom_phi - top_phi
 
 
+    def _save_projector_mask_image(self, filename):
+        """
+        Save an image of the projector mask. This projector mask is 1 for
+        projector pixels that hit the mirror and 0 for pixels that miss the
+        mirror.
+        """
+
+        image = Image.fromarray(array(255*self._projector_mask,
+                                     dtype=uint8), mode='L')
+        image.save(filename, "png")
+
+
     def _debug_geometry(self, row, col):
         """
         Display images of intermediate results.
@@ -787,69 +863,6 @@ class DomeProjection:
         pdf.close()
         plot.show()
 
-
-    def warp_image_for_dome(self, images):
-        """
-        Take an RGB input image intended for display on a flat screen and
-        produce an image for the projector that removes the distortions caused
-        by projecting the image onto the dome using a spherical mirror.
-        """
-        pixels = []
-        for i, image in enumerate(images):
-            assert image.size == (self._image_pixel_width[i],
-                                  self._image_pixel_height[i])
-            pixels.append(array(image))
-
-        warped_pixels = zeros([self._projector_pixel_height,
-                               self._projector_pixel_width, 3], dtype=uint8)
-        for row in range(self._projector_pixel_height):
-            for col in range(self._projector_pixel_width):
-                pixel_value = zeros(3)
-                for pixel in self._contributing_pixels[row][col]:
-                    pixel_value += pixels[pixel[0]][pixel[1], pixel[2]]
-                n = len(self._contributing_pixels[row][col])
-                if n > 0:
-                    pixel_value = pixel_value/n
-                warped_pixels[row][col] = array(pixel_value, dtype=uint8)
-
-        return Image.fromarray(warped_pixels, mode='RGB')
-
-
-    def _unwarp_image(self, warped_image):
-        """
-        Take an image intended for projection onto the dome and reconstruct the
-        images used to make it.
-        """
-        assert warped_image.size == (self._projector_pixel_width,
-                                     self._projector_pixel_height)
-
-        warped_pixels = array(warped_image)
-        pixels = [zeros([self._image_pixel_height[i],
-                         self._image_pixel_width[i], 3], dtype=uint8)
-                  for i in range(len(self._image_pixel_height))]
-        for image in range(len(self._image_pixel_height)):
-            row = 0
-            while row < self._image_pixel_height[image]:
-                columns = range(self._image_pixel_width[image])
-                for col in columns:
-                    """
-                    For each image pixel, find the closest projector pixel
-                    and use its RGB values.
-                    Go through the pixels in a serpentine pattern so that the
-                    current pixel is always close to the last pixel.  This way the
-                    search algorithm can use the last result as its starting point.
-                    """
-                    projector_pixel = self._find_closest_projector_pixel(image,
-                                                                         row, col)
-                    pp_row = projector_pixel[0]
-                    pp_col = projector_pixel[1]
-                    if self._projector_mask[pp_row, pp_col] == 1:
-                        pixels[image][row, col] = warped_pixels[pp_row, pp_col]
-                row = row + 1
-                columns.reverse()
-
-        return [Image.fromarray(pixels[i], mode='RGB') for i in
-                range(len(pixels))]
 
 
 
