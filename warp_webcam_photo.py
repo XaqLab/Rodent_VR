@@ -5,6 +5,7 @@ from PIL import Image
 from dome_projection import DomeProjection
 from os import listdir
 import cPickle
+import webcam
 
 DEBUG = True
 
@@ -15,9 +16,9 @@ filenames = ["Image38.jpg"]
 
 # screen height and width were calculated based on measurements from webcam photos
 # these numbers are in inches
-parameters = dict(screen_height = [2.375],
-              screen_width = [4.0625],
-              distance_to_screen = [3.0],
+parameters = dict(screen_height = [webcam.screen_height],
+              screen_width = [webcam.screen_width],
+              distance_to_screen = [webcam.distance_to_screen],
               pitch = [30],
               yaw = [0],
               roll = [0],

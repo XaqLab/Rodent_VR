@@ -20,7 +20,6 @@ for filepath in sys.argv[1:]:
         exit("unknown file type")
     directory = filepath.replace(filename,"")
     input_image = Image.open(directory + filename)
-    [rows, cols] = input_image.size
 
     if dome_image_size != input_image.size:
         dome_image_size = input_image.size
