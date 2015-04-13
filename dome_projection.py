@@ -176,32 +176,41 @@ class DomeProjection:
             self._row_vector.append(row_vector)
 
         """
-        Calculate the unit vectors (aka directions) that point from
-        OpenGL's virtual camera towards all of the OpenGL image pixels.
-        All vectors are relative to OpenGL's virtual camera which
-        is looking down the positive y-axis.
-        """
-        self._camera_view_directions = \
-            [flat_display_directions(screen_height[i],
-                                     screen_width[i],
-                                     image_pixel_height[i],
-                                     image_pixel_width[i],
-                                     distance_to_screen[i],
-                                     phi = self._pitch[i],
-                                     yaw = self._yaw[i]) 
-             for i in range(len(screen_height))]
-
-        """
         Calculate the unit vectors (directions) from the animal inside the dome
         towards the projection of each projector pixel on to the dome.
         """
-        self._animal_view_directions = self._dome_display_directions()
+        # Calculate the position of the projector's focal point.
+        self._projector_focal_point = self._calc_projector_focal_point()
 
-        """
-        Build lists of the OpenGL image pixels that contribute to each
-        projector pixel.
-        """
-        self._contributing_pixels = self._calc_contributing_pixels()
+        # Calculate projector image height and width.
+        # This calculation assumes the projector image has the same width at
+        # the top and bottom, i.e. the projector's keystone adjustment is set
+        # properly.
+        top_right_x = second_projector_image[1][0]
+        top_left_x = second_projector_image[0][0]
+        top_left_z = second_projector_image[0][2]
+        bottom_left_z = second_projector_image[3][2]
+        self._projector_image_height = top_left_z - bottom_left_z
+        self._projector_image_width = top_right_x - top_left_x
+
+        # Calculate the distance from the projector's focal point to the image.
+        image_y = self._second_projector_image[0][1]
+        projector_y = self._projector_focal_point[1]
+        self._projector_distance_to_image = image_y - projector_y
+
+        # Calculate the projector's vertical throw.
+        projector_z = self._projector_focal_point[2]
+        self._projector_vertical_offset = (bottom_left_z - projector_z +
+                                           self._projector_image_height/2.0)
+
+        # Setup properties that will be calculated if warp_image_for_dome is
+        # called.
+        self._projector_mask = []
+        self._animal_view_directions = []
+        self._contributing_pixels = []
+
+        # Setup properties that will be calculated if _unwarp_image is called.
+        self._camera_view_directions = []
 
 
 
@@ -215,6 +224,13 @@ class DomeProjection:
         produce an image for the projector that removes the distortions caused
         by projecting the image onto the dome using a spherical mirror.
         """
+        if self._contributing_pixels == []:
+            """
+            Build lists of the OpenGL image pixels that contribute to each
+            projector pixel.
+            """
+            self._contributing_pixels = self._calc_contributing_pixels()
+
         pixels = []
         for i, image in enumerate(images):
             assert image.size == (self._image_pixel_width[i],
@@ -241,8 +257,26 @@ class DomeProjection:
         Take an image intended for projection onto the dome and reconstruct the
         images used to make it.
         """
+        #import pdb; pdb.set_trace()
         assert warped_image.size == (self._projector_pixel_width,
                                      self._projector_pixel_height)
+
+        if self._camera_view_directions == []:
+            """
+            Calculate the unit vectors (aka directions) that point from
+            OpenGL's virtual camera towards all of the OpenGL image pixels.
+            All vectors are relative to OpenGL's virtual camera which
+            is looking down the positive y-axis.
+            """
+            self._camera_view_directions = \
+                [flat_display_directions(self._screen_height[i],
+                                         self._screen_width[i],
+                                         self._image_pixel_height[i],
+                                         self._image_pixel_width[i],
+                                         self._distance_to_screen[i],
+                                         phi = self._pitch[i],
+                                         yaw = self._yaw[i]) 
+                 for i in range(len(self._screen_height))]
 
         warped_pixels = array(warped_image)
         pixels = [zeros([self._image_pixel_height[i],
@@ -273,58 +307,44 @@ class DomeProjection:
                 range(len(pixels))]
 
 
-    def _dome_display_directions(self):
+    def _calc_dome_display_directions(self):
         """
         Return the unit vectors (directions) from the viewer inside the dome
         towards the projection of each projector pixel on to the dome.
+        """
+        self._projector_mask = zeros([self._projector_pixel_height,
+                                      self._projector_pixel_width],
+                                     dtype=uint8)
+        self._animal_view_directions = zeros([self._projector_pixel_height,
+                                              self._projector_pixel_width, 3])
+        for row in range(self._projector_pixel_height):
+            for column in range(self._projector_pixel_width):
+                [mask, direction] = self._dome_display_direction(row, column)
+                self._projector_mask[row, column] = mask
+                self._animal_view_directions[row, column] = direction
+
+
+    def _dome_display_direction(self, row, column):
+        """
+        Return the unit vector (direction) from the viewer inside the dome
+        towards the projection of the specified projector pixel on to the dome.
         All vectors used in these calculations are relative to the center of
         the hemispherical mirror.  The projector is on the positive y-axis
         (but projecting in the -y direction) and its projected image is assumed
         to be horizontally centered on the mirror.
         """
 
-        # Calculate the position of the projector's focal point.
-        projector_focal_point = self._calc_projector_focal_point()
-
-        if DEBUG:
-            self._projector_focal_point = projector_focal_point
-
-        """
-        Calculate the unit vectors (directions) from the projector's focal
-        point towards the mirror for each projector pixel.  This calculation
-        assumes second_projector_image has the same width at the top and bottom.
-        """
-        # calculate image height and width
-        top_right_x = self._second_projector_image[1][0]
-        top_left_x = self._second_projector_image[0][0]
-        top_left_z = self._second_projector_image[0][2]
-        bottom_left_z = self._second_projector_image[3][2]
-
-        image_height = top_left_z - bottom_left_z
-        image_width = top_right_x - top_left_x
-
-        # calculate distance from projector to image
-        image_y = self._second_projector_image[0][1]
-        projector_y = projector_focal_point[1]
-
-        distance_to_image = image_y - projector_y
-
-        # calculate vertical offset of image relative to projector
-        projector_z = projector_focal_point[2]
-
-        vertical_offset = bottom_left_z - projector_z + image_height/2.0
-
-        # calculate the directions for each projector pixel
-        self._projector_pixel_directions = \
-            flat_display_directions(image_height,
-                                    image_width,
-                                    self._projector_pixel_height,
-                                    self._projector_pixel_width,
-                                    distance_to_image,
-                                    vertical_offset)
+        # Calculate the direction of light emanating from the projector pixel.
+        projector_pixel_direction = \
+            flat_display_direction(row, column, self._projector_image_height,
+                                   self._projector_image_width,
+                                   self._projector_pixel_height,
+                                   self._projector_pixel_width,
+                                   self._projector_distance_to_image,
+                                   self._projector_vertical_offset)
 
         # Flip the sign of the x-values because projection is in -y direction
-        self._projector_pixel_directions *= array([-1, 1, 1])
+        projector_pixel_direction *= array([-1, 1, 1])
 
         """
         Complete the triangle consisting of:
@@ -339,122 +359,96 @@ class DomeProjection:
         and is used to calculate the direction of the reflected light.
         """
         # solve quadratic equation for y-component of vector 2
-        px = projector_focal_point[0]
-        py = projector_focal_point[1]
-        pz = projector_focal_point[2]
-        pdx = self._projector_pixel_directions[:, :, 0]
-        pdy = self._projector_pixel_directions[:, :, 1]
-        pdz = self._projector_pixel_directions[:, :, 2]
+        px = self._projector_focal_point[0]
+        py = self._projector_focal_point[1]
+        pz = self._projector_focal_point[2]
+        pdx = projector_pixel_direction[0]
+        pdy = projector_pixel_direction[1]
+        pdz = projector_pixel_direction[2]
         a = pdx**2 + pdy**2 + pdz**2
         b = 2*px*pdx + 2*py*pdy + 2*pz*pdz
         c = px**2 + py**2 + pz**2 - self._mirror_radius**2
-        projector_mask = zeros([self._projector_pixel_height,
-                                self._projector_pixel_width], dtype=int)
-        incident_light_vectors = zeros([self._projector_pixel_height,
-                                        self._projector_pixel_width, 3])
-        for i in range(self._projector_pixel_height):
-            for j in range(self._projector_pixel_width):
-                """
-                The vector will intersect the sphere twice.  Pick the root
-                for the shorter vector.
-                """
-                d_squared = b[i, j]**2 - 4*a[i, j]*c
-                if d_squared >= 0:
-                    """
-                    For projector pixels that hit the mirror, calculate the
-                    incident light vector and set the mask to one.
-                    """
-                    d = sqrt(d_squared)
-                    r = min([(-b[i, j] + d) / (2*a[i, j]),
-                         (-b[i, j] - d) / (2*a[i, j])])
-                    x = r*pdx[i, j]
-                    y = r*pdy[i, j]
-                    z = r*pdz[i, j]
-                    incident_light_vectors[i, j] = array([x, y, z])
-                    projector_mask[i, j] = 1
+        projector_mask = 0
+        incident_light_vector = 0
+        """
+        The vector will intersect the sphere twice.  Pick the root
+        for the shorter vector.
+        """
+        d_squared = b**2 - 4*a*c
+        if d_squared >= 0:
+            """
+            For projector pixels that hit the mirror, calculate the
+            incident light vector and set the mask to one.
+            """
+            d = sqrt(d_squared)
+            r = min([(-b + d) / (2*a), (-b - d) / (2*a)])
+            x = r*pdx
+            y = r*pdy
+            z = r*pdz
+            incident_light_vector = array([x, y, z])
+            projector_mask = 1
 
-        mirror_radius_vectors = projector_focal_point + incident_light_vectors
-        mirrorUnitNormals = mirror_radius_vectors / self._mirror_radius
-
-        if DEBUG:
-            # create properties for intermediate results
-            self._projector_mask = projector_mask
-            self._incident_light_vectors = incident_light_vectors
-            self._mirror_radius_vectors = mirror_radius_vectors
-            self._mirrorUnitNormals = mirrorUnitNormals
+        mirror_radius_vector = (self._projector_focal_point +
+                                 incident_light_vector)
+        mirrorUnitNormal = mirror_radius_vector / self._mirror_radius
 
         """
-        Use the incident_light_vectors and the mirrorUnitNormals to calculate
+        Use the incident_light_vector and the mirrorUnitNormal to calculate
         the direction of the reflected light.
         """
-        reflectedLightDirections = zeros([self._projector_pixel_height,
-                                          self._projector_pixel_width, 3])
-        for i in range(self._projector_pixel_height):
-            for j in range(self._projector_pixel_width):
-                if projector_mask[i, j] == 1:
-                    u = mirrorUnitNormals[i, j]
-                    reflectedLightVector = \
-                        -2*dot(incident_light_vectors[i, j], u)*u \
-                        + incident_light_vectors[i, j]
-                    reflectedLightDirections[i, j] = \
-                        reflectedLightVector/linalg.norm(reflectedLightVector)
-
-        if DEBUG:
-            self._reflectedLightDirections = reflectedLightDirections
+        reflectedLightDirection = zeros([3])
+        if projector_mask == 1:
+            u = mirrorUnitNormal
+            reflectedLightVector = \
+                -2*dot(incident_light_vector, u)*u \
+                + incident_light_vector
+            reflectedLightDirection = \
+                reflectedLightVector/linalg.norm(reflectedLightVector)
 
         """
-        Complete the triangle again to get the reflected light vectors.
+        Complete the triangle again to get the reflected light vector.
         The known vector is from the center of the dome to the reflection
-        point on the mirror (calculated as mirror_radius_vectors - dome_center)
+        point on the mirror (calculated as mirror_radius_vector - dome_center)
         and the length of the vector with unknown direction is the dome radius.
         """
         # solve quadratic for y-component of reflected light vectors
-        rpx = mirror_radius_vectors[:, :, 0] - self._dome_center[0]
-        rpy = mirror_radius_vectors[:, :, 1] - self._dome_center[1]
-        rpz = mirror_radius_vectors[:, :, 2] - self._dome_center[2]
-        rldx = reflectedLightDirections[:, :, 0]
-        rldy = reflectedLightDirections[:, :, 1]
-        rldz = reflectedLightDirections[:, :, 2]
+        rpx = mirror_radius_vector[0] - self._dome_center[0]
+        rpy = mirror_radius_vector[1] - self._dome_center[1]
+        rpz = mirror_radius_vector[2] - self._dome_center[2]
+        rldx = reflectedLightDirection[0]
+        rldy = reflectedLightDirection[1]
+        rldz = reflectedLightDirection[2]
         a = rldx**2 + rldy**2 + rldz**2
         b = 2*rpx*rldx + 2*rpy*rldy + 2*rpz*rldz
         c = rpx**2 + rpy**2 + rpz**2 - self._dome_radius**2
-        reflected_light_vectors = zeros([self._projector_pixel_height,
-                                         self._projector_pixel_width, 3])
-        for i in range(self._projector_pixel_height):
-            for j in range(self._projector_pixel_width):
-                if projector_mask[i, j] == 1:
-                    # For projector pixels that hit the mirror,
-                    # take the solution with positive vector length.
-                    d = sqrt(b[i, j]**2 - 4*a[i, j]*c[i, j])
-                    r = max([(-b[i, j] + d) / (2*a[i, j]),
-                             (-b[i, j] - d) / (2*a[i, j])])
-                    x = r*rldx[i, j]
-                    y = r*rldy[i, j]
-                    z = r*rldz[i, j]
-                    reflected_light_vectors[i, j] = [x, y, z]
-
-        if DEBUG:
-            self._reflected_light_vectors = reflected_light_vectors
+        reflected_light_vector = zeros([3])
+        if projector_mask == 1:
+            # For projector pixels that hit the mirror,
+            # take the solution with positive vector length.
+            d = sqrt(b**2 - 4*a*c)
+            r = max([(-b + d) / (2*a),
+                     (-b - d) / (2*a)])
+            x = r*rldx
+            y = r*rldy
+            z = r*rldz
+            reflected_light_vector = [x, y, z]
 
         """
-        Now use the vectors of the reflected light, reflection position on the
+        Now use the vector of the reflected light, reflection position on the
         mirror, and animal position to calculate the animal's viewing direction
-        for each projector pixel.
+        for the projector pixel.
         """
-        animal_view_directions = zeros([self._projector_pixel_height,
-                                        self._projector_pixel_width, 3])
-        for i in range(self._projector_pixel_height):
-            for j in range(self._projector_pixel_width):
-                if projector_mask[i, j] == 1:
-                    # For projector pixels that hit the mirror,
-                    # calculate the view direction for the animal.
-                    animal_view_vector = (reflected_light_vectors[i, j]
-                                        + mirror_radius_vectors[i, j]
-                                        - self._animal_position)
-                    magnitude = linalg.norm(animal_view_vector)
-                    animal_view_directions[i, j] = animal_view_vector/magnitude
+        animal_view_direction = zeros([3])
+        if projector_mask == 1:
+            # For projector pixels that hit the mirror,
+            # calculate the view direction for the animal.
+            animal_view_vector = (reflected_light_vector
+                                  + mirror_radius_vector
+                                  - self._animal_position)
+            magnitude = linalg.norm(animal_view_vector)
+            animal_view_direction = animal_view_vector/magnitude
 
-        return animal_view_directions
+        return [projector_mask, animal_view_direction]
 
 
     def _calc_projector_focal_point(self):
@@ -491,6 +485,9 @@ class DomeProjection:
         Use the direction for each projector pixel to calculate the nearest
         OpenGL pixel and use its RGB values for the projector pixel.  
         """
+
+        # Calculate self._projector_mask and self._animal_view_directions
+        self._calc_dome_display_directions()
 
         # This 2D list of lists contains the list of OpenGL pixels
         # that contribute to each projector pixel.
@@ -762,29 +759,6 @@ class DomeProjection:
         image.save(filename, "png")
 
 
-    def _debug_geometry(self, row, col):
-        """
-        Display images of intermediate results.
-        """
-
-        x_unit_vector = array([1, 0, 0])
-        y_unit_vector = array([0, 1, 0])
-        z_unit_vector = array([0, 0, 1])
-
-        projector_y = self._projector_pixel_directions.dot(y_unit_vector)
-        image = Image.fromarray(array(255*projector_y, dtype=uint8), mode='L')
-        image.show()
-
-        image = Image.fromarray(array(255*self._projector_mask,
-                                     dtype=uint8), mode='L')
-        image.show()
-
-        animal_view_y = self._animal_view_directions.dot(y_unit_vector)
-        y_image = Image.fromarray(array(255*abs(animal_view_y),
-                                        dtype=uint8), mode='L')
-        y_image.show()
-
-
     def _plot_image_outlines(self):
         """
         Plot the outline of the OpenGL image, the mirror, the warped image, and
@@ -875,33 +849,38 @@ def flat_display_directions(screen_height, screen_width, pixel_height,
                             vertical_offset = 0, phi = 0, yaw = 0):
     """
     Return unit vectors that point from the viewer towards each pixel
-    on a flat screen display.  The display is along the positive y-axis
+    """
+    directions = zeros([pixel_height, pixel_width, 3])
+    for row in range(pixel_height):
+        for column in range(pixel_width):
+            directions[row, column] = \
+                    flat_display_direction(row, column, screen_height,
+                                           screen_width, pixel_height,
+                                           pixel_width, distance_to_screen,
+                                           vertical_offset, phi, yaw)
+
+    return directions
+
+
+def flat_display_direction(row, column, screen_height, screen_width,
+                           pixel_height, pixel_width, distance_to_screen,
+                           vertical_offset = 0, phi = 0, yaw = 0):
+    """
+    Return a unit vector that points from the viewer towards the specified
+    pixel on a flat screen display.  The display is along the positive y-axis
     relative to the viewer.  The positive x-axis is to the viewer's right
-    and the positive z-axis is up.
-
-    vertical_offset shifts the screen in the z-direction
-
-    phi is the angle between the vector from the origin to the center of the
-    image and the x-y plane
-    """
-    # Make matrices of projector row and column values for each pixel
-    rows = array([[float(i)]*pixel_width for i in
-                  range(pixel_height)])
-    columns = array([[float(i)]*pixel_height for i in
-                     range(pixel_width)]).T
-
-    """
-    Calculate x and z values from column and row values so they
-    are symmetric about the center of the image and scaled to the
-    screen size.
-    Also shift the z-values by z-offset and adjust y and z for rotation by phi.
+    and the positive z-axis is up.  The vertical_offset parameter shifts the
+    screen in the positive z-direction.  Phi is the angle between the vector
+    from the origin to the center of the image and the x-y plane.  Yaw is the
+    angle of ratation in the x-y plane.  It is positive to the right and
+    negative to the left.
     """
 
-    x_zero_yaw_zero_phi = (screen_width / pixel_width
-                           * (columns + 0.5 - pixel_width/2.0))
+    x_zero_yaw_zero_phi = (float(screen_width) / pixel_width
+                           * (column + 0.5 - pixel_width/2.0))
     y_zero_yaw_zero_phi = distance_to_screen
-    z_zero_yaw_zero_phi = (screen_height / pixel_height
-                           * (pixel_height/2.0 - (rows + 0.5)))
+    z_zero_yaw_zero_phi = (float(screen_height) / pixel_height
+                           * (pixel_height/2.0 - (row + 0.5)))
 
     x_zero_yaw = x_zero_yaw_zero_phi
     y_zero_yaw = (y_zero_yaw_zero_phi * cos(phi)
@@ -913,10 +892,9 @@ def flat_display_directions(screen_height, screen_width, pixel_height,
     y = y_zero_yaw * cos(yaw) - x_zero_yaw * sin(yaw)
     z = z_zero_yaw + vertical_offset
 
-    # y is the distance from the viewer to the screen
     r = sqrt(x**2 + y**2 + z**2)
 
-    return dstack([x/r, y/r, z/r])
+    return array([x/r, y/r, z/r])
 
 
 def plot_magnitude(array_of_vectors):
