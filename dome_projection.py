@@ -136,7 +136,7 @@ class DomeProjection:
 
         # Start search in the middle of the projector's bottom row of pixels
         self._projector_pixel_row = projector_pixel_height - 1
-        self._projector_pixel_col = projector_pixel_width/2.0
+        self._projector_pixel_col = projector_pixel_width/2
 
         #######################################################################
         # Properties calculated from arguments
@@ -257,9 +257,15 @@ class DomeProjection:
         Take an image intended for projection onto the dome and reconstruct the
         images used to make it.
         """
-        #import pdb; pdb.set_trace()
         assert warped_image.size == (self._projector_pixel_width,
                                      self._projector_pixel_height)
+
+        if self._contributing_pixels == []:
+            """
+            Build lists of the OpenGL image pixels that contribute to each
+            projector pixel.
+            """
+            self._contributing_pixels = self._calc_contributing_pixels()
 
         if self._camera_view_directions == []:
             """
