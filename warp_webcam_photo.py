@@ -8,7 +8,7 @@ import re
 import cPickle
 import webcam
 
-DEBUG = True
+DEBUG = False
 
 filepath = sys.argv[1]
 filename = re.split(r"/",filepath)[-1]
@@ -68,7 +68,7 @@ if DEBUG:
     input_image.show()
     print "Creating an instance of the DomeProjection class to unwarp images"
     #parameters['mirror_radius'] -= 0.001
-    parameters['dome_radius'] -= 0.010
+    #parameters['dome_radius'] -= 0.010
     unwarp_dome = DomeProjection(**parameters)
     print "Done initializing dome"
     
