@@ -27,7 +27,7 @@ input_image = Image.open(directory + filename)
 parameters = dict(screen_height = [webcam.screen_height],
                   screen_width = [webcam.screen_width],
                   distance_to_screen = [webcam.distance_to_screen],
-                  pitch = [30],
+                  pitch = [0],
                   yaw = [0],
                   roll = [0],
                   image_pixel_width = [1280],
