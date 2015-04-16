@@ -48,20 +48,19 @@ class DomeProjection:
                  image_pixel_width = [280, 280, 280],
                  projector_pixel_height = 720,
                  projector_pixel_width = 1280,
-                 first_projector_image = [[-0.080, 0.436, 0.137],
-                                          [0.080, 0.436, 0.137],
-                                          [0.080, 0.436, 0.043],
-                                          [-0.080, 0.436, 0.043]],
-                 second_projector_image = [[-0.115, 0.265, 0.186],
-                                           [0.115, 0.265, 0.186],
-                                           [0.115, 0.265, 0.054],
-                                           [-0.115, 0.265, 0.054]],
-                 mirror_radius = 0.215,
-                 dome_center = [0, 0.138, 0.309],
-                 dome_radius = 0.603,
-                 animal_position = [0, 0.06, 0.61]
+                 first_projector_image = [[-0.084, 0.436, 0.137],
+                                          [ 0.084, 0.436, 0.137],
+                                          [ 0.084, 0.436, 0.042],
+                                          [-0.084, 0.436, 0.042]],
+                 second_projector_image = [[-0.119, 0.265, 0.185],
+                                           [ 0.119, 0.265, 0.185],
+                                           [ 0.119, 0.265, 0.051],
+                                           [-0.119, 0.265, 0.051]],
+                 mirror_radius = 0.219,
+                 dome_center = [0, 0.141, 0.308],
+                 dome_radius = 0.576,
+                 animal_position = [0, 0.060, 0.627]
                  ):
-                 #mirror_radius = 0.223,
 
         """
         Parameters:
