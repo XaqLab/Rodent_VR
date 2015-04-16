@@ -208,19 +208,12 @@ def minimization_function(x, image_pixels, measured_directions):
     vertical_offset = x[3]
     projector_images = calc_projector_images(projector_y, projector_z, theta,
                                              vertical_offset)
-    #mirror_radius = x[4]
-    #dome_y = x[5]
-    #dome_z = x[6]
-    #dome_radius = x[7]
-    #animal_y = x[8]
-    #animal_z = x[9]
-
-    mirror_radius = 0.215
-    dome_y = 0.138
-    dome_z = 0.309
-    dome_radius = 0.603
-    animal_y = 0.06
-    animal_z = 0.61
+    mirror_radius = x[4]
+    dome_y = x[5]
+    dome_z = x[6]
+    dome_radius = x[7]
+    animal_y = x[8]
+    animal_z = x[9]
 
     # setup the parameters dictionary
     parameters = dict(screen_height = [webcam.screen_height],
@@ -332,7 +325,7 @@ if __name__ == "__main__":
         #import pdb; pdb.set_trace()
         f = minimization_function
         arguments = (image_pixels, measured_directions)
-        results = minimize(f, x0, args=arguments)
+        results = minimize(f, x0, args=arguments, method='Nelder-Mead')
         print results
         projector_images = calc_projector_images(*results['x'][0:4])
         for image in projector_images:
