@@ -33,19 +33,7 @@ parameters = dict(screen_height = [webcam.screen_height],
                   image_pixel_width = [1280],
                   image_pixel_height = [720],
                   projector_pixel_width = 1280,
-                  projector_pixel_height = 720,
-                  first_projector_image = [[-0.080, 0.436, 0.137],
-                                           [0.080, 0.436, 0.137],
-                                           [0.080, 0.436, 0.043],
-                                           [-0.080, 0.436, 0.043]],
-                  second_projector_image = [[-0.115, 0.265, 0.186],
-                                            [0.115, 0.265, 0.186],
-                                            [0.115, 0.265, 0.054],
-                                            [-0.115, 0.265, 0.054]],
-                  mirror_radius = 0.215,
-                  dome_center = [0, 0.138, 0.309],
-                  dome_radius = 0.603,
-                  animal_position = [0, 0.06, 0.61])
+                  projector_pixel_height = 720)
 
 print "Creating an instance of the DomeProjection class to warp images"
 dome = DomeProjection(**parameters)
