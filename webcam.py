@@ -15,4 +15,5 @@ distance_to_screen = 3.0
 # This parameter was estimated during calibration
 theta = 0.597554159536
 
+from dome_calibration import calc_webcam_FoV
 [screen_height, screen_width, distance_to_screen] = calc_webcam_FoV(theta)
