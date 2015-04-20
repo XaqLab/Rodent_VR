@@ -7,7 +7,7 @@ containing objects that are centered on known projector pixels.
 
 import sys
 from PIL import Image
-from numpy import array, ones, uint8, mean, dot, sin, arcsin
+from numpy import array, ones, uint8, mean, dot, tan, arctan
 from scipy.optimize import minimize
 from dome_projection import DomeProjection, flat_display_direction
 import webcam
@@ -15,7 +15,7 @@ import webcam
 # increase recursion limit for add_pixel_to_object
 sys.setrecursionlimit(10000)
 
-DEBUG = False
+DEBUG = True
 
 # define constants
 PROJECTOR_PIXEL_WIDTH = 1280
@@ -126,7 +126,8 @@ def find_center_pixels(image_filename):
             center_column = int(round(mean(object_pixel_array[:,1])))
             center_pixels.append([center_row, center_column])
     
-    if DEBUG:
+    #if DEBUG:
+    if False:
         """ invert the center pixels so they can be seen """
         for center_pixel in center_pixels:
             pixels[center_pixel[0], center_pixel[1]] = BACKGROUND_PIXEL_VALUE
@@ -148,7 +149,7 @@ def calc_projector_images(y, z, theta, vertical_offset):
     # distance to first image, chosen to match measurements
     y1 = 0.436
     # calculate x from theta and the distance between the focal point and image
-    x1 = (y - y1) * sin(theta)
+    x1 = (y - y1) * tan(theta)
     # calculate z by assuming a 16:9 aspect ratio 
     z1_low = vertical_offset
     z1_high = z1_low + 2 * 9.0/16.0 * x1
@@ -159,9 +160,9 @@ def calc_projector_images(y, z, theta, vertical_offset):
 
     # do it again for image2
     y2 = 0.265
-    x2 = (y - y2) * sin(theta)
+    x2 = (y - y2) * tan(theta)
     slope = (vertical_offset - z) / (y - y1)
-    z2_low = slope * (y - y2)
+    z2_low = z + slope * (y - y2)
     z2_high = z2_low + 2 * 9.0/16.0 * x2
     image2 = [[ -x2,  y2,  z2_high ],
               [  x2,  y2,  z2_high ],
@@ -179,23 +180,36 @@ def calc_frustum_parameters(image1, image2):
     vertical_offset = image1[2][2]
 
     # calculate theta
-    x1 = image1[0][0]
-    x2 = image2[0][0]
-    y1 = image1[0][1]
-    y2 = image2[0][1]
-    theta = arcsin((x2 - x1) / (y2 - y1))
+    x1 = image1[1][0]
+    x2 = image2[1][0]
+    y1 = image1[1][1]
+    y2 = image2[1][1]
+    theta = arctan((x2 - x1) / (y1 - y2))
 
     # calculate y
-    y = y1 - x1 / sin(theta)
+    y = y1 + x1 / tan(theta)
 
     # calculate z
     z2_low = image2[2][2]
-    z = vertical_offset - z2_low * (y - y1)/(y - y2)
+    slope = (vertical_offset - z2_low) / (y1 - y2)
+    z = vertical_offset + slope * (y - y1)
     
     return [y, z, theta, vertical_offset]
 
 
-def minimization_function(x, image_pixels, measured_directions):
+def calc_webcam_FoV(theta):
+    distance_to_screen = 3.0
+    screen_width = 2 * distance_to_screen * arctan(theta)
+    screen_height = screen_width / (1280 / 720)
+    return [screen_height, screen_width, distance_to_screen]
+
+
+def calc_webcam_theta(screen_height, screen_width, distance_to_screen):
+    theta = arctan(0.5 * screen_width / distance_to_screen)
+    return theta
+
+
+def minimization_function(x, image_pixels, photo_pixels):
     """
     Calculate the negative sum of the dot products between the measured
     directions and the calculated directions.  Minimizing this function is
@@ -204,22 +218,36 @@ def minimization_function(x, image_pixels, measured_directions):
     # decode entries in x into meaningful names
     projector_y = x[0]
     projector_z = x[1]
-    theta = x[2]
+    projector_theta = x[2]
     vertical_offset = x[3]
-    projector_images = calc_projector_images(projector_y, projector_z, theta,
-                                             vertical_offset)
+    projector_images = calc_projector_images(projector_y, projector_z,
+                                             projector_theta, vertical_offset)
     mirror_radius = x[4]
     dome_y = x[5]
     dome_z = x[6]
     dome_radius = x[7]
     animal_y = x[8]
     animal_z = x[9]
+    webcam_theta = x[10]
+
+    # Calculate the directions to photo_pixels using the camera's estimated
+    # field of view.
+    [height, width, distance] = calc_webcam_FoV(webcam_theta)
+    measured_directions = []
+    for photo_pixel in photo_pixels:
+        [row, column] = photo_pixel
+        arguments = [row, column, height, width, webcam.pixel_height,
+                    webcam.pixel_width, distance]
+        #arguments = [row, column, webcam.screen_height, webcam.screen_width,
+        #             webcam.pixel_height, webcam.pixel_width,
+        #             webcam.distance_to_screen]
+        measured_directions.append(flat_display_direction(*arguments))
 
     # setup the parameters dictionary
     parameters = dict(screen_height = [webcam.screen_height],
                       screen_width = [webcam.screen_width],
                       distance_to_screen = [webcam.distance_to_screen],
-                      pitch = [30],
+                      pitch = [0],
                       yaw = [0],
                       roll = [0],
                       image_pixel_width = [1280],
@@ -241,11 +269,15 @@ def minimization_function(x, image_pixels, measured_directions):
         [row, col] = image_pixel
         calculated_direction = dome._dome_display_direction(row, col)[1]
         calculated_directions.append(calculated_direction)
-    if DEBUG:
+    #if DEBUG:
+    if False:
+        print "Measured directions:", measured_directions
         print "Calculated directions:", calculated_directions
 
-    return -sum([measured_directions[i].dot(calculated_directions[i])
+    value = -sum([measured_directions[i].dot(calculated_directions[i])
                  for i in range(len(measured_directions))])
+    print value,
+    return value
 
 
 ###############################################################################
@@ -254,8 +286,16 @@ def minimization_function(x, image_pixels, measured_directions):
 if __name__ == "__main__":
     # Define image_pixels here because they are needed for both image
     # generation and parameter estimation.
-    diamond_size = 19
+    diamond_size = 13
     image_pixels = [[500, 540], [500, 740]]
+    #image_pixels = [[500, 512], [500, 563], [500, 614],
+    #                [500, 665], [500, 716], [500, 767],
+    #                [550, 512], [550, 563], [550, 614],
+    #                [550, 665], [550, 716], [550, 767],
+    #                [600, 512], [600, 563], [600, 614],
+    #                [600, 665], [600, 716], [600, 767],
+    #                [650, 512], [650, 563], [650, 614],
+    #                [650, 665], [650, 716], [650, 767]]
     if len(sys.argv) == 1:
         """
         No arguments given so generate the calibration image and save it to a
@@ -265,7 +305,7 @@ if __name__ == "__main__":
         """
         calibration_image = \
                 create_calibration_image(image_pixels, diamond_size)
-        calibration_image.save("dome_calibration.png")
+        calibration_image.save("calibration_image.png")
     else:
         """
         At least one argument given, treat the first argument as the file name
@@ -281,20 +321,9 @@ if __name__ == "__main__":
         # calibration image projected onto the dome.
         photo_pixels = find_center_pixels(calibration_photo)
 
-        # Calculate the directions to photo_pixels using the camera's FoV.
-        measured_directions = []
-        for photo_pixel in photo_pixels:
-            [row, column] = photo_pixel
-            arguments = [row, column, webcam.screen_height,
-                         webcam.screen_width, webcam.pixel_height,
-                         webcam.pixel_width, webcam.distance_to_screen]
-            measured_directions.append(flat_display_direction(*arguments))
-
-        if DEBUG:
-            print "Image pixels:", image_pixels
-            print "Photo pixels:", photo_pixels
-            print "Measured directions:", measured_directions
-
+        #if DEBUG:
+        print "Image pixels:", image_pixels
+        print "Photo pixels:", photo_pixels
 
         # Search the parameter space to find values that maximize the dot
         # products between measured_directions and calculated directions.
@@ -320,12 +349,30 @@ if __name__ == "__main__":
         
         x0 = (calc_frustum_parameters(first_projector_image,
                                      second_projector_image) + 
-              [mirror_radius, dome_center[1], dome_center[2], dome_radius,
-               animal_position[1], animal_position[2]])
+              [mirror_radius,
+               dome_center[1],
+               dome_center[2],
+               dome_radius,
+               animal_position[1],
+               animal_position[2],
+               calc_webcam_theta(webcam.screen_height, webcam.screen_width,
+                                 webcam.distance_to_screen)])
+        parameter_bounds = [(None, None),
+                            (None, None),
+                            (None, None),
+                            (None, None),
+                            (None, None),
+                            (None, None),
+                            (None, None),
+                            (None, None),
+                            (None, None),
+                            (None, None),
+                            (0.5, 0.7)]
         #import pdb; pdb.set_trace()
         f = minimization_function
-        arguments = (image_pixels, measured_directions)
-        results = minimize(f, x0, args=arguments, method='Nelder-Mead')
+        arguments = (image_pixels, photo_pixels)
+        results = minimize(f, x0, args=arguments, method='L-BFGS-B',
+                           bounds=parameter_bounds)
         print results
         projector_images = calc_projector_images(*results['x'][0:4])
         for image in projector_images:
@@ -337,5 +384,6 @@ if __name__ == "__main__":
         print "Dome radius:", results['x'][7]
         print "Animal y-coordinate:", results['x'][8]
         print "Animal z-coordinate:", results['x'][9]
+        print "Webcam theta:", results['x'][10]
 
 
