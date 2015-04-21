@@ -177,34 +177,6 @@ def find_center_pixels(image_filename):
     return center_pixels
 
 
-def sort_center_pixels(pixel_list, diamond_size):
-    """
-    Sort the center pixels from right to left and then top to bottom so they
-    get matched to the correct projector pixel.
-    """
-    sorted_pixels = []
-    while len(pixel_list) > 0:
-        # find the center pixel with the lowest row number
-        pixel_index = 0
-        for i in range(1, len(pixel_list)):
-            if pixel_list[i][0] < pixel_list[pixel_index][0]:
-                pixel_index = i
-
-        # start a row using this center pixel
-        row = [pixel_list.pop(pixel_index)]
-
-        # add center pixels with similar row numbers to this row
-        for i in range(1, len(pixel_list)):
-            if pixel_list[i][0] < row[0][0] + diamond_size:
-                row.append(pixel_list.pop(i))
-
-        # sort the row from right to left
-        row.sort(key=lambda f: f[1], reverse=True)
-        sorted_pixels.extend(row)
-
-    return sorted_pixels
-
-
 def calc_projector_images(y, z, theta, vertical_offset):
     """
     Calculate the two projector_image parameters that the dome class requires
@@ -386,10 +358,6 @@ if __name__ == "__main__":
         # Find the center pixels of the objects in the photograph of the
         # calibration image projected onto the dome.
         photo_pixels = find_center_pixels(calibration_photo)
-
-        # Sort the photo's center pixels to guarantee that they are matched up
-        # with the correct image_pixels.
-        #photo_pixels = sort_center_pixels(photo_pixels, diamond_size)
 
         #if DEBUG:
         print "Image pixels:", image_pixels
