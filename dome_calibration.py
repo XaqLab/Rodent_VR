@@ -8,6 +8,7 @@ containing objects that are centered on known projector pixels.
 import sys
 from PIL import Image
 from numpy import array, ones, uint8, mean, dot, tan, arctan
+from numpy import histogram, diff, sign
 from scipy.optimize import minimize
 from dome_projection import DomeProjection, flat_display_direction
 import webcam
@@ -71,63 +72,102 @@ def find_center_pixels(image_filename):
         for column in range(image_width):
             if pixels[row, column] > PIXEL_THRESHOLD:
                 object_pixels.append([row, column])
+
+    # build histograms of object pixels row and column values
+    row_values = [object_pixels[i][0] for i in range(len(object_pixels))]
+    row_counts = histogram(row_values, range(image_height + 1))[0]
+    col_values = [object_pixels[i][1] for i in range(len(object_pixels))]
+    col_counts = histogram(col_values, range(image_width + 1))[0]
+
+    # The peaks in this multimodal distribution are separated by intervals
+    # containing all zeros.  Find the center of these zero intervals and use
+    # them as thresholds for separating objects.
+
+    # Find the row thresholds.
+    start = 0
+    end = 0
+    row_thresholds = []
+    #import pdb; pdb.set_trace()
+    while end < len(row_counts):
+        if row_counts[start] == 0:
+            if row_counts[end] != 0:
+                # end of interval, add center to thresholds
+                row_thresholds.append((start + end)/2)
+                start = end
+        else:
+            # looking for the beginning of an interval
+            start = start + 1
+        end = end + 1
+    # throw away first threshold when there are no objects
+    # on the edge of the image
+    if row_counts[0] == 0:
+        row_thresholds = row_thresholds[1:]
+
+    # Find the column thresholds.
+    start = 0
+    end = 0
+    col_thresholds = []
+    while end < len(col_counts):
+        if col_counts[start] == 0:
+            if col_counts[end] != 0:
+                # end of interval, add center to thresholds
+                col_thresholds.append((start + end)/2)
+                start = end
+        else:
+            # looking for the beginning of an interval
+            start = start + 1
+        end = end + 1
+    # throw away first threshold when there are no objects
+    # on the edge of the image
+    if col_counts[0] == 0:
+        col_thresholds = col_thresholds[1:]
     
+    if DEBUG:
+        for row_threshold in row_thresholds:
+            for col in range(1280):
+                pixels[row_threshold, col] = OBJECT_PIXEL_VALUE
+
+        for col_threshold in col_thresholds:
+            for row in range(720):
+                pixels[row, col_threshold] = OBJECT_PIXEL_VALUE
+
+        print row_thresholds
+        print col_thresholds
+        debug_image = Image.fromarray(pixels, mode = 'L')
+        debug_image.show()
     
-    def add_pixel_to_object(object_pixels, index, objects):
-        """
-        Add object_pixels[index] to the last object in the objects list and
-        then check the 8 adjacent pixels to see if any of them are among the
-        remaining object pixels and add them to the object if they are.
-        """
-        pixel = object_pixels.pop(index)
-        objects[-1].append(pixel)
-        
-        # check adjacent pixels
-        row_above = [[-1, -1], [-1, 0], [-1, 1]]
-        beside = [[0, -1], [0, 1]]
-        row_below = [[1, -1], [1, 0], [1, 1]]
-        offsets = row_above + beside + row_below
-        pixel_row = pixel[0]
-        pixel_column = pixel[1]
-        neighbors = [[pixel_row + dr, pixel_column + dc]
-                     for [dr, dc] in offsets]
-        for neighbor in neighbors:
-            if neighbor in object_pixels:
-                add_pixel_to_object(object_pixels,
-                                    object_pixels.index(neighbor), objects)
-    
-    
-    # sort object pixels into sets of adjacent pixels (i.e. objects)
+
+    # Sort object pixels into objects, reverse the order of the column
+    # thresholds so when we're done the objects are sorted from right to left,
+    # top to bottom as needed to match the correct image pixel.
+    row_thresholds.append(image_height - 1)
+    col_thresholds.reverse()
+    col_thresholds.append(0)
     objects = []
-    while len(object_pixels) > 0:
-        # Start a new object and add the first object pixel to it, recursion
-        # will take care of the rest.
-        objects.append([])
-        add_pixel_to_object(object_pixels, 0, objects)
-    
-    
-    # Avoid counting small groups of pixels from image distortion as objects by
-    # finding the number of pixels in the largest object and ignoring objects which
-    # have fewer than 10% of the pixels the largest object has.
-    largest_object_size = 0
-    for obj in objects:
-        object_size = len(obj)
-        if object_size > largest_object_size:
-            largest_object_size = object_size
-    
-    
+    for row_threshold in row_thresholds:
+        for col_threshold in col_thresholds:
+            # start a new object
+            objects.append([])
+            i = len(object_pixels) - 1
+            while i > 0:
+                if (object_pixels[i][0] <= row_threshold and
+                    object_pixels[i][1] >= col_threshold):
+                    object_pixel = object_pixels.pop(i)
+                    objects[-1].append(object_pixel)
+                i = i - 1
+
+
     # estimate which pixel is at the center of each object by averaging the row
     # and column values of the pixels
     center_pixels = []
     for obj in objects:
-        if len(obj) > 0.1 * largest_object_size:
-            object_pixel_array = array(obj)
-            center_row = int(round(mean(object_pixel_array[:,0])))
-            center_column = int(round(mean(object_pixel_array[:,1])))
-            center_pixels.append([center_row, center_column])
+        object_pixel_array = array(obj)
+        center_row = int(round(mean(object_pixel_array[:,0])))
+        center_column = int(round(mean(object_pixel_array[:,1])))
+        center_pixels.append([center_row, center_column])
     
-    #if DEBUG:
-    if False:
+    if DEBUG:
+    #if False:
         """ invert the center pixels so they can be seen """
         for center_pixel in center_pixels:
             pixels[center_pixel[0], center_pixel[1]] = BACKGROUND_PIXEL_VALUE
@@ -135,6 +175,34 @@ def find_center_pixels(image_filename):
         debug_image.show()
     
     return center_pixels
+
+
+def sort_center_pixels(pixel_list, diamond_size):
+    """
+    Sort the center pixels from right to left and then top to bottom so they
+    get matched to the correct projector pixel.
+    """
+    sorted_pixels = []
+    while len(pixel_list) > 0:
+        # find the center pixel with the lowest row number
+        pixel_index = 0
+        for i in range(1, len(pixel_list)):
+            if pixel_list[i][0] < pixel_list[pixel_index][0]:
+                pixel_index = i
+
+        # start a row using this center pixel
+        row = [pixel_list.pop(pixel_index)]
+
+        # add center pixels with similar row numbers to this row
+        for i in range(1, len(pixel_list)):
+            if pixel_list[i][0] < row[0][0] + diamond_size:
+                row.append(pixel_list.pop(i))
+
+        # sort the row from right to left
+        row.sort(key=lambda f: f[1], reverse=True)
+        sorted_pixels.extend(row)
+
+    return sorted_pixels
 
 
 def calc_projector_images(y, z, theta, vertical_offset):
@@ -199,8 +267,8 @@ def calc_frustum_parameters(image1, image2):
 
 def calc_webcam_FoV(theta):
     distance_to_screen = 3.0
-    screen_width = 2 * distance_to_screen * arctan(theta)
-    screen_height = screen_width / (1280 / 720)
+    screen_width = 2 * distance_to_screen * tan(theta)
+    screen_height = screen_width / (1280.0 / 720.0)
     return [screen_height, screen_width, distance_to_screen]
 
 
@@ -209,7 +277,7 @@ def calc_webcam_theta(screen_height, screen_width, distance_to_screen):
     return theta
 
 
-def minimization_function(x, image_pixels, photo_pixels):
+def minimization_function(x, image_pixels, photo_pixels, webcam_theta):
     """
     Calculate the negative sum of the dot products between the measured
     directions and the calculated directions.  Minimizing this function is
@@ -228,7 +296,6 @@ def minimization_function(x, image_pixels, photo_pixels):
     dome_radius = x[7]
     animal_y = x[8]
     animal_z = x[9]
-    webcam_theta = x[10]
 
     # Calculate the directions to photo_pixels using the camera's estimated
     # field of view.
@@ -238,15 +305,12 @@ def minimization_function(x, image_pixels, photo_pixels):
         [row, column] = photo_pixel
         arguments = [row, column, height, width, webcam.pixel_height,
                     webcam.pixel_width, distance]
-        #arguments = [row, column, webcam.screen_height, webcam.screen_width,
-        #             webcam.pixel_height, webcam.pixel_width,
-        #             webcam.distance_to_screen]
         measured_directions.append(flat_display_direction(*arguments))
 
     # setup the parameters dictionary
-    parameters = dict(screen_height = [webcam.screen_height],
-                      screen_width = [webcam.screen_width],
-                      distance_to_screen = [webcam.distance_to_screen],
+    parameters = dict(screen_height = [height],
+                      screen_width = [width],
+                      distance_to_screen = [distance],
                       pitch = [0],
                       yaw = [0],
                       roll = [0],
@@ -276,7 +340,7 @@ def minimization_function(x, image_pixels, photo_pixels):
 
     value = -sum([measured_directions[i].dot(calculated_directions[i])
                  for i in range(len(measured_directions))])
-    print value,
+    #print value,
     return value
 
 
@@ -285,17 +349,19 @@ def minimization_function(x, image_pixels, photo_pixels):
 ###############################################################################
 if __name__ == "__main__":
     # Define image_pixels here because they are needed for both image
-    # generation and parameter estimation.
+    # generation and parameter estimation.  They must be listed from left to
+    # right and then top to bottom so they can be matched with the correct
+    # direction.
     diamond_size = 13
-    image_pixels = [[500, 540], [500, 740]]
-    #image_pixels = [[500, 512], [500, 563], [500, 614],
-    #                [500, 665], [500, 716], [500, 767],
-    #                [550, 512], [550, 563], [550, 614],
-    #                [550, 665], [550, 716], [550, 767],
-    #                [600, 512], [600, 563], [600, 614],
-    #                [600, 665], [600, 716], [600, 767],
-    #                [650, 512], [650, 563], [650, 614],
-    #                [650, 665], [650, 716], [650, 767]]
+    #image_pixels = [[500, 540], [500, 740]]
+    image_pixels = [[500, 512], [500, 563], [500, 614],
+                    [500, 665], [500, 716], [500, 767],
+                    [550, 512], [550, 563], [550, 614],
+                    [550, 665], [550, 716], [550, 767],
+                    [600, 512], [600, 563], [600, 614],
+                    [600, 665], [600, 716], [600, 767],
+                    [650, 512], [650, 563], [650, 614],
+                    [650, 665], [650, 716], [650, 767]]
     if len(sys.argv) == 1:
         """
         No arguments given so generate the calibration image and save it to a
@@ -321,18 +387,16 @@ if __name__ == "__main__":
         # calibration image projected onto the dome.
         photo_pixels = find_center_pixels(calibration_photo)
 
+        # Sort the photo's center pixels to guarantee that they are matched up
+        # with the correct image_pixels.
+        #photo_pixels = sort_center_pixels(photo_pixels, diamond_size)
+
         #if DEBUG:
         print "Image pixels:", image_pixels
         print "Photo pixels:", photo_pixels
 
         # Search the parameter space to find values that maximize the dot
         # products between measured_directions and calculated directions.
-
-        """
-        Note: there is currently nothing that guarantees that image_pixels and
-        photo_pixels are in the same order!  If they are not then the results
-        will not be useful.
-        """
 
         first_projector_image = [[-0.080, 0.436, 0.137],
                                  [0.080, 0.436, 0.137],
@@ -354,9 +418,7 @@ if __name__ == "__main__":
                dome_center[2],
                dome_radius,
                animal_position[1],
-               animal_position[2],
-               calc_webcam_theta(webcam.screen_height, webcam.screen_width,
-                                 webcam.distance_to_screen)])
+               animal_position[2]])
         parameter_bounds = [(None, None),
                             (None, None),
                             (None, None),
@@ -366,24 +428,60 @@ if __name__ == "__main__":
                             (None, None),
                             (None, None),
                             (None, None),
-                            (None, None),
-                            (0.5, 0.7)]
-        #import pdb; pdb.set_trace()
+                            (None, None)]
         f = minimization_function
-        arguments = (image_pixels, photo_pixels)
-        results = minimize(f, x0, args=arguments, method='L-BFGS-B',
-                           bounds=parameter_bounds)
-        print results
-        projector_images = calc_projector_images(*results['x'][0:4])
-        for image in projector_images:
-            for row in image:
-                print row
-        print "Mirror radius:", results['x'][4]
-        print "Dome y-coordinate:", results['x'][5]
-        print "Dome z-coordinate:", results['x'][6]
-        print "Dome radius:", results['x'][7]
-        print "Animal y-coordinate:", results['x'][8]
-        print "Animal z-coordinate:", results['x'][9]
-        print "Webcam theta:", results['x'][10]
+        test_image = Image.open("test_images/WebCameras/Image42.jpg")
+        for webcam_theta in [0.6]:
+        #for webcam_theta in [0.2, 0.3]:
+            arguments = (image_pixels, photo_pixels, webcam_theta)
+            results = minimize(f, x0, args=arguments, method='L-BFGS-B',
+                               bounds=parameter_bounds)
+            print results
+            projector_y = results['x'][0]
+            projector_z = results['x'][1]
+            projector_theta = results['x'][2]
+            vertical_offset = results['x'][3]
+            projector_images = calc_projector_images(projector_y, projector_z,
+                                             projector_theta, vertical_offset)
+            mirror_radius = results['x'][4]
+            dome_y = results['x'][5]
+            dome_z = results['x'][6]
+            dome_radius = results['x'][7]
+            animal_y = results['x'][8]
+            animal_z = results['x'][9]
+
+            for image in projector_images:
+                for row in image:
+                    print row
+            print "Mirror radius:", mirror_radius
+            print "Dome y-coordinate:", dome_y
+            print "Dome z-coordinate:", dome_z
+            print "Dome radius:", dome_radius
+            print "Animal y-coordinate:", animal_y
+            print "Animal z-coordinate:", animal_z
+            print "Webcam theta:", webcam_theta
+            print "screen_height, screen_width, distance_to_screen"
+            [screen_height, screen_width, distance_to_screen] = \
+            calc_webcam_FoV(webcam_theta)
+            print screen_height, screen_width, distance_to_screen
+            dome = DomeProjection(screen_height=[screen_height],
+                                  screen_width=[screen_width],
+                                  distance_to_screen=[distance_to_screen],
+                                  pitch = [0],
+                                  yaw = [0],
+                                  roll = [0],
+                                  image_pixel_width = [1280],
+                                  image_pixel_height = [720],
+                                  first_projector_image=projector_images[0],
+                                  second_projector_image=projector_images[1],
+                                  mirror_radius=mirror_radius,
+                                  dome_center=[0, dome_y, dome_z],
+                                  animal_position = [0, animal_y, animal_z])
+            warped_image = dome.warp_image_for_dome([test_image])
+            warped_image.save("warped_Image42_" + str(webcam_theta) + ".jpg",
+                              "jpeg")
+            
+
+
 
 
