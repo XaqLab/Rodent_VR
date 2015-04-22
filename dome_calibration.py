@@ -57,15 +57,15 @@ def find_center_pixels(image_filename):
     objects in the calibration image are centered.
     """
 
-    # define the pixel threshold used to distinguish objects from the background
-    PIXEL_THRESHOLD = (BACKGROUND_PIXEL_VALUE + OBJECT_PIXEL_VALUE) / 2
-
     # read image from file
     image = Image.open(image_filename).convert('L')
     [image_width, image_height] = image.size
     pixels = array(image)
     image.close()
     
+    # define the pixel threshold used to distinguish objects from the background
+    PIXEL_THRESHOLD = (int(pixels.max()) + int(pixels.min())) / 2
+
     # find all the object pixels
     object_pixels = []
     for row in range(image_height):
@@ -328,12 +328,12 @@ if __name__ == "__main__":
     #image_pixels = [[500, 540], [500, 740]]
     image_pixels = [[500, 512], [500, 563], [500, 614],
                     [500, 665], [500, 716], [500, 767],
-                    [550, 512], [550, 563], [550, 614],
-                    [550, 665], [550, 716], [550, 767],
-                    [600, 512], [600, 563], [600, 614],
-                    [600, 665], [600, 716], [600, 767],
-                    [650, 512], [650, 563], [650, 614],
-                    [650, 665], [650, 716], [650, 767]]
+                    [545, 512], [545, 563], [545, 614],
+                    [545, 665], [545, 716], [545, 767],
+                    [590, 512], [590, 563], [590, 614],
+                    [590, 665], [590, 716], [590, 767],
+                    [635, 512], [635, 563], [635, 614],
+                    [635, 665], [635, 716], [635, 767]]
     if len(sys.argv) == 1:
         """
         No arguments given so generate the calibration image and save it to a
@@ -399,8 +399,7 @@ if __name__ == "__main__":
                             (None, None)]
         f = minimization_function
         test_image = Image.open("test_images/WebCameras/Image42.jpg")
-        for webcam_theta in [0.6]:
-        #for webcam_theta in [0.2, 0.3]:
+        for webcam_theta in [0.5]:
             arguments = (image_pixels, photo_pixels, webcam_theta)
             results = minimize(f, x0, args=arguments, method='L-BFGS-B',
                                bounds=parameter_bounds)
