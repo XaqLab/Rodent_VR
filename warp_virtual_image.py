@@ -25,9 +25,13 @@ for filepath in sys.argv[1:]:
         dome_image_size = input_image.size
         # Initialize the dome display
         print "Creating instance of DomeProjection Class"
-        dome = DomeProjection(screen_height = [2.375],
-                              screen_width = [4.0625],
-                              distance_to_screen = [3.0],
+                              #screen_height = [2.375],
+                              #screen_width = [4.0625],
+                              #distance_to_screen = [3.0],
+        dome = DomeProjection(
+                              screen_height = [1],
+                              screen_width = [1],
+                              distance_to_screen = [0.5],
                               pitch = [30],
                               yaw = [0],
                               roll = [0],
