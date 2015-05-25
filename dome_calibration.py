@@ -26,18 +26,22 @@ DEBUG = True
 # define constants
 PROJECTOR_PIXEL_WIDTH = 1280
 PROJECTOR_PIXEL_HEIGHT = 720
+CAMERA_PIXEL_WIDTH = 1280
+CAMERA_PIXEL_HEIGHT = 720
 BACKGROUND_PIXEL_VALUE = 0
-OBJECT_PIXEL_VALUE = 192
+OBJECT_PIXEL_VALUE = 192  # < 255 to prevent saturating the camera
 
 
-def create_calibration_image(center_pixels, diamond_size):
+def create_diamond_image(center_pixels, diamond_size,
+                         image_width=PROJECTOR_PIXEL_WIDTH,
+                         image_height=PROJECTOR_PIXEL_HEIGHT):
     """
     Make an image with diamonds centered on center_pixels.  The height and
     width of the diamonds is specified by diamond_size.
     """
 
     # make a dark background
-    pixels = ones([PROJECTOR_PIXEL_HEIGHT, PROJECTOR_PIXEL_WIDTH], dtype=uint8)
+    pixels = ones([image_height, image_width], dtype=uint8)
     pixels = BACKGROUND_PIXEL_VALUE * pixels
 
     half_size = (diamond_size - 1)/2
@@ -56,21 +60,62 @@ def create_calibration_image(center_pixels, diamond_size):
     return Image.fromarray(pixels, mode='L')
 
 
-def find_center_pixels(image_filename):
+def create_calibration_image(seed_image, diamond_size):
     """
-    This function returns [row, column] coordinates for the pixels on which
-    objects in the calibration image are centered. The pixels are ordered from
-    left to right and then top to bottom.
+    Make a calibration image which repeats an image at several yaw values to
+    cover the required field of view.  
     """
 
-    # read image from file
-    image = Image.open(image_filename).convert('L')
+    [image_width, image_height] = seed_image.size
+    
+    dome = DomeProjection(screen_width = [1]*10,
+                          screen_height = [1]*10,
+                          distance_to_screen = [0.5]*10,
+                          pitch = [0]*10,
+                          yaw = [-135, -105, -75, -45, -15,
+                                 15, 45, 75, 105, 135],
+                          roll = [0]*10,
+                          image_pixel_width=[image_width]*10,
+                          image_pixel_height=[image_height]*10,
+                          projector_pixel_width=1280,
+                          projector_pixel_height=720)
+
+    warped_image = dome.warp_image_for_dome([seed_image, seed_image,
+                                             seed_image, seed_image,
+                                             seed_image, seed_image,
+                                             seed_image, seed_image,
+                                             seed_image, seed_image])
+
+    centers = find_centers(warped_image)
+
+    x_center = CAMERA_PIXEL_WIDTH/2 - 0.5
+    y_center = CAMERA_PIXEL_HEIGHT/2 - 0.5
+    center_pixels = [[-point[1] + y_center, point[0] + x_center]
+                        for point in centers]
+    center_pixels = [[int(round(pixel[0])), int(round(pixel[1]))]
+                        for pixel in center_pixels]
+    calibration_image = create_calibration_image(center_pixels, 3)
+    calibration_image.show()
+
+    return calibration_image
+
+
+def find_centers(image):
+    """
+    This function returns coordinates for the centers of objects in a grey
+    scale image.  The objects are distinguished from the background by using
+    a threshold pixel value.  The coordinates are ordered from left to
+    right and then top to bottom.  The coordinates can be returned in either
+    the default (x, y) format or in (row, column) format.
+    """
+
+    image.show()
     [image_width, image_height] = image.size
     pixels = array(image)
-    image.close()
     
     # define the pixel threshold used to distinguish objects from the background
-    PIXEL_THRESHOLD = (int(pixels.max()) + int(pixels.min())) / 2
+    # this value was determined empirically
+    PIXEL_THRESHOLD = 0.4 * (int(pixels.max()) + int(pixels.min()))
 
     # find all the object pixels
     object_pixels = []
@@ -78,6 +123,11 @@ def find_center_pixels(image_filename):
         for column in range(image_width):
             if pixels[row, column] > PIXEL_THRESHOLD:
                 object_pixels.append([row, column])
+
+    if DEBUG:
+        """ show all the object pixels by making them black """
+        for pixel in object_pixels:
+            pixels[pixel[0], pixel[1]] = 0
 
     # build histograms of object pixels row and column values
     row_values = [object_pixels[i][0] for i in range(len(object_pixels))]
@@ -127,21 +177,9 @@ def find_center_pixels(image_filename):
     if col_counts[0] == 0:
         col_thresholds = col_thresholds[1:]
     
-    if DEBUG:
-        for row_threshold in row_thresholds:
-            for col in range(1280):
-                pixels[row_threshold, col] = OBJECT_PIXEL_VALUE
 
-        for col_threshold in col_thresholds:
-            for row in range(720):
-                pixels[row, col_threshold] = OBJECT_PIXEL_VALUE
-
-        debug_image = Image.fromarray(pixels, mode = 'L')
-        debug_image.show()
-    
-
-    # Sort object pixels into objects when we're done the objects are ordered
-    # from left to right and then top to bottom.
+    # Sort object pixels into objects so when we're done the objects are
+    # ordered from left to right and then top to bottom.
     row_thresholds.append(image_height - 1)
     col_thresholds.append(image_width - 1)
     objects = []
@@ -158,24 +196,40 @@ def find_center_pixels(image_filename):
                 i = i - 1
 
 
-    # estimate which pixel is at the center of each object by averaging the row
-    # and column values of the pixels
+    # find the center of each object by averaging the row and column values
+    # of its pixels
     center_pixels = []
+    center_points = []
     for obj in objects:
-        object_pixel_array = array(obj)
-        center_row = int(round(mean(object_pixel_array[:,0])))
-        center_column = int(round(mean(object_pixel_array[:,1])))
-        center_pixels.append([center_row, center_column])
+        if len(obj) > 0:
+            object_pixel_array = array(obj)
+            average_row_value = mean(object_pixel_array[:,0])
+            average_col_value = mean(object_pixel_array[:,1])
+            center_row = int(round(average_row_value))
+            center_column = int(round(average_col_value))
+            center_pixels.append([center_row, center_column])
+            x_center = average_col_value - image_width/2 + 0.5
+            y_center = -(average_row_value - image_height/2 + 0.5)
+            center_points.append([x_center, y_center])
     
     if DEBUG:
-    #if False:
+        """ show the row and column thresholds used to separate objects """
+        for row_threshold in row_thresholds:
+            for col in range(1280):
+                pixels[row_threshold, col] = OBJECT_PIXEL_VALUE
+
+        for col_threshold in col_thresholds:
+            for row in range(720):
+                pixels[row, col_threshold] = OBJECT_PIXEL_VALUE
+
         """ invert the center pixels so they can be seen """
-        for center_pixel in center_pixels:
-            pixels[center_pixel[0], center_pixel[1]] = BACKGROUND_PIXEL_VALUE
+        for pixel in center_pixels:
+            pixels[pixel[0], pixel[1]] = 255
+
         debug_image = Image.fromarray(pixels, mode = 'L')
         debug_image.show()
     
-    return center_pixels
+    return center_points
 
 
 def calc_projector_images(y, z, theta, vertical_offset):
@@ -250,18 +304,11 @@ def calc_webcam_theta(screen_height, screen_width, distance_to_screen):
     return theta
 
 
-def remove_distortion(pixels, coefficients):
+def remove_distortion(points, coefficients):
     """
-    Map distorted pixels to undistorted pixels using a simplified
+    Map distorted (x, y) points to undistorted (x, y) points using a simplified
     Brown-Conrady model.
     """
-    # convert pixels (row, col) to points (x, y)
-    points = [[pixel[1], -pixel[0]] for pixel in pixels]
-
-    # shift the image so it's centered at (0, 0)
-    x_center = webcam.pixel_width/2 - 0.5
-    y_center = -(webcam.pixel_height/2 - 0.5)
-    points = [[point[0] - x_center, point[1] - y_center] for point in points]
 
     # calculate the undistorted x and y values from the distorted values
     x = array([points[i][0] for i in range(len(points))])
@@ -271,44 +318,9 @@ def remove_distortion(pixels, coefficients):
     x_undistorted = x*(1 + K[0]*r2 + K[1]*r2**2 + K[2]*r2**3)
     y_undistorted = y*(1 + K[0]*r2 + K[1]*r2**2 + K[2]*r2**3)
 
-    # convert (x, y) points back to (row, col) pixels and shift the image back
-    # to its original location
-    rows = [int(round(-(i + y_center))) for i in y_undistorted]
-    cols = [int(round(i + x_center)) for i in x_undistorted]
-
-    return [[rows[i], cols[i]] for i in range(len(pixels))]
+    return [[x_undistorted[i], y_undistorted[i]] for i in range(len(points))]
 
 
-def add_distortion(pixels, coefficients):
-    """
-    Map undistorted pixels to distorted pixels using a simplified
-    Brown-Conrady model.
-    """
-    # convert pixels (row, col) to points (x, y)
-    points = [[pixel[1], -pixel[0]] for pixel in pixels]
-
-    # shift the image so it's centered at (0, 0)
-    x_center = webcam.pixel_width/2 - 0.5
-    y_center = -(webcam.pixel_height/2 - 0.5)
-    points = [[point[0] - x_center, point[1] - y_center] for point in points]
-
-    # calculate the distorted x and y values from the undistorted values
-    x_undistorted = array([points[i][0] for i in range(len(points))])
-    y_undistorted = array([points[i][1] for i in range(len(points))])
-    r2 = x_undistorted**2 + y_undistorted**2
-    K = coefficients
-    x_distorted = x_undistorted*(1 + K[0]*r2 + K[1]*r2**2 + K[2]*r2**3)
-    y_distorted = y_undistorted*(1 + K[0]*r2 + K[1]*r2**2 + K[2]*r2**3)
-
-    # convert (x, y) points back to (row, col) pixels and shift the image back
-    # to its original location
-    rows = [int(round(-(i + y_center))) for i in y_distorted]
-    cols = [int(round(i + x_center)) for i in x_distorted]
-
-    return [[rows[i], cols[i]] for i in range(len(pixels))]
-
-
-def camera_cal_debug(x, image_pixels, photo_pixels):
     
     # sort x into meaninful names
     scaling_factor = x[0]
@@ -317,47 +329,44 @@ def camera_cal_debug(x, image_pixels, photo_pixels):
     translation_y = x[3]
     distortion_coefficients = x[4:]
 
-    # convert image pixels (row, col) to points (x, y)
-    points = [[pixel[1], -pixel[0]] for pixel in photo_pixels]
-
-    # shift the image so it's centered at (0, 0)
-    x_center = webcam.pixel_width/2 - 0.5
-    y_center = webcam.pixel_height/2 - 0.5
-    points = [[point[0] - x_center, point[1] + y_center] for point in points]
-
     # Rotate, translate and scale the image to remove the effects of
     # these nuisance variables.
     A = array([[ cos(rotation_angle), -sin(rotation_angle)],
                [ sin(rotation_angle),  cos(rotation_angle)]])
     A = scaling_factor * A
     B = array([translation_x, translation_y])
-    points = [list(A.dot(point) + B) for point in points]
+    centers = [list(A.dot(center) + B) for center in photo_centers]
 
-    # convert (x, y) points back to (row, col) pixels and shift the image back
-    # to its original location
-    pixels = [[-point[1] + y_center, point[0] + x_center] for point in points]
-
-    pixels2 = [[int(round(pixel[0])), int(round(pixel[1]))] for pixel in pixels]
-    create_calibration_image(pixels2, 13).show()
+    # convert (x, y) center points to (row, column) pixels so we can show the
+    # image before distortion removal
+    x_center = CAMERA_PIXEL_WIDTH/2 - 0.5
+    y_center = CAMERA_PIXEL_HEIGHT/2 - 0.5
+    distorted_pixels = [[-point[1] + y_center, point[0] + x_center]
+                        for point in centers]
+    distorted_pixels = [[int(round(pixel[0])), int(round(pixel[1]))]
+                        for pixel in distorted_pixels]
+    create_calibration_image(distorted_pixels, 13).show()
 
     # remove radial distortion from the camera calibration photo pixels
-    pixels = remove_distortion(pixels, distortion_coefficients)
-    x_photo = array([pixels[i][1] for i in range(len(pixels))])
-    y_photo = array([-pixels[i][0] for i in range(len(pixels))])
+    centers = remove_distortion(centers, distortion_coefficients)
+
+    # show the image after distortion removal
+    pixels = [[-point[1] + y_center, point[0] + x_center] for point in centers]
+    pixels = [[int(round(pixel[0])), int(round(pixel[1]))] for pixel in pixels]
+    create_calibration_image(pixels, 13).show()
 
     print "\nCamera calibration photo pixels before and after distortion removal"
     for i in range(len(pixels)):
-        print "%3s" % str(pixels2[i][0] - pixels[i][0]) + ",",
-        print "%3s" % str(pixels2[i][1] - pixels[i][1]) + "  ",
+        print "%3s" % str(pixels[i][0] - distorted_pixels[i][0]) + ",",
+        print "%3s" % str(pixels[i][1] - distorted_pixels[i][1]) + "  ",
         if i % 14 == 13:
             print
     print
-    create_calibration_image(pixels, 13).show()
 
     return
 
 
-def camera_distortion(x, image_pixels, photo_pixels):
+def camera_distortion(x, image_centers, photo_centers):
     """
     Calculate the sum of the squared error between the pixels in the camera
     calibration image and the pixels in the distortion-corrected photo of the
@@ -370,35 +379,23 @@ def camera_distortion(x, image_pixels, photo_pixels):
     translation_y = x[3]
     distortion_coefficients = x[4:]
 
-    # convert image pixels (row, col) to points (x, y)
-    points = [[pixel[1], -pixel[0]] for pixel in photo_pixels]
-
-    # shift the image so it's centered at (0, 0)
-    x_center = webcam.pixel_width/2 - 0.5
-    y_center = webcam.pixel_height/2 - 0.5
-    points = [[point[0] - x_center, point[1] + y_center] for point in points]
-
     # Rotate, translate and scale the image to remove the effects of
     # these nuisance variables.
     A = array([[ cos(rotation_angle), -sin(rotation_angle)],
                [ sin(rotation_angle),  cos(rotation_angle)]])
     A = scaling_factor * A
     B = array([translation_x, translation_y])
-    points = [list(A.dot(point) + B) for point in points]
-
-    # convert (x, y) points back to (row, col) pixels and shift the image back
-    # to its original location
-    pixels = [[-point[1] + y_center, point[0] + x_center] for point in points]
+    centers = [list(A.dot(center) + B) for center in photo_centers]
 
     # remove radial distortion from the camera calibration photo pixels
-    pixels = remove_distortion(pixels, distortion_coefficients)
-    x_photo = array([pixels[i][1] for i in range(len(pixels))])
-    y_photo = array([-pixels[i][0] for i in range(len(pixels))])
+    centers = remove_distortion(centers, distortion_coefficients)
+    x_photo = array([centers[i][0] for i in range(len(centers))])
+    y_photo = array([centers[i][1] for i in range(len(centers))])
 
-    # calculate the sum of the square differences between the distorted pixel
+    # calculate the sum of the square differences between the image pixel
     # values and the pixel values from the photo
-    x_image = array([image_pixels[i][1] for i in range(len(image_pixels))])
-    y_image = array([-image_pixels[i][0] for i in range(len(image_pixels))])
+    x_image = array([image_centers[i][0] for i in range(len(image_centers))])
+    y_image = array([image_centers[i][1] for i in range(len(image_centers))])
     value = sum((x_photo - x_image)**2 + (y_photo - y_image)**2)
 
     return value
@@ -409,6 +406,7 @@ def dome_distortion(x, image_pixels, photo_pixels, webcam_theta):
     Calculate the sum of the square differences between measured and calculated
     directions.
     """
+    assert len(image_pixels) == len(photo_pixels)
     # decode entries in x into meaningful names
     projector_y = x[0]
     projector_z = x[1]
@@ -464,7 +462,6 @@ def dome_distortion(x, image_pixels, photo_pixels, webcam_theta):
         print "Measured directions:", measured_directions
         print "Calculated directions:", calculated_directions
 
-    #import pdb; pdb.set_trace()
     value = sum([linalg.norm(measured_directions[i] - calculated_directions[i])
                              for i in range(len(measured_directions))])
     #value = -sum([measured_directions[i].dot(calculated_directions[i])
@@ -477,12 +474,6 @@ def dome_distortion(x, image_pixels, photo_pixels, webcam_theta):
 # Main program starts here
 ###############################################################################
 if __name__ == "__main__":
-    """
-    This is the vertical and horizontal pixel size of the diamonds in the
-    calibration images.
-    """
-    diamond_size = 13
-
     """
     Define camera_pixels which will be used to generate the camera calibration
     image so we can compensate for the distortion introduced by the camera we
@@ -508,14 +499,36 @@ if __name__ == "__main__":
     mirror involved, these pixels must be listed from right to left and then
     top to bottom so they can be matched with the correct pixels in the photo.
     """
-    dome_pixels = [[500, 767], [500, 716], [500, 665],
-                   [500, 614], [500, 563], [500, 512],
-                   [545, 767], [545, 716], [545, 665],
-                   [545, 614], [545, 563], [545, 512], 
-                   [590, 767], [590, 716], [590, 665],
-                   [590, 614], [590, 563], [590, 512],
-                   [635, 767], [635, 716], [635, 665],
-                   [635, 614], [635, 563], [635, 512]]
+
+    dome_pixels = [[494, 810], [494, 789], [495, 766], [495, 742], [496, 717],
+                   [497, 692], [497, 666], [497, 613], [497, 587], [496, 562],
+                   [495, 537], [495, 513], [495, 491], [493, 470], [506, 815],
+                   [507, 793], [508, 770], [510, 746], [510, 720], [511, 694],
+                   [511, 667], [512, 612], [511, 585], [510, 559], [510, 534],
+                   [509, 509], [507, 486], [506, 464], [520, 821], [521, 798],
+                   [523, 774], [524, 750], [525, 723], [526, 696], [526, 668],
+                   [527, 611], [526, 583], [525, 556], [524, 530], [523, 505],
+                   [521, 481], [520, 459], [534, 826], [536, 803], [538, 779],
+                   [540, 753], [541, 726], [542, 698], [542, 669], [542, 610],
+                   [542, 581], [541, 553], [540, 526], [538, 500], [536, 476], 
+                   [534, 453], [548, 831], [551, 808], [553, 783], [555, 756],
+                   [557, 729], [558, 700], [559, 670], [559, 609], [558, 580],
+                   [557, 551], [555, 523], [554, 496], [551, 471], [548, 448],
+                   [580, 843], [583, 818], [586, 792], [589, 764], [591, 734],
+                   [593, 704], [594, 672], [594, 608], [593, 576], [591, 545],
+                   [589, 516], [586, 488], [583, 461], [580, 437], [595, 848],
+                   [600, 823], [603, 796], [606, 768], [609, 737], [610, 705],
+                   [612, 673], [612, 606], [611, 574], [609, 542], [606, 513],
+                   [603, 484], [599, 456], [595, 432], [612, 853], [616, 828],
+                   [620, 800], [624, 771], [627, 739], [629, 707], [630, 674],
+                   [630, 606], [629, 572], [627, 540], [624, 509], [620, 480],
+                   [616, 452], [612, 426], [628, 858], [633, 832], [638, 804],
+                   [641, 774], [645, 742], [647, 709], [648, 675], [648, 605],
+                   [647, 571], [645, 537], [641, 506], [637, 476], [633, 448],
+                   [628, 421], [645, 863], [650, 836], [655, 808], [659, 777],
+                   [663, 744], [666, 710], [667, 676], [667, 604], [666, 569],
+                   [663, 535], [659, 503], [655, 472], [650, 443], [645, 417]]
+
     if len(sys.argv) == 1:
         """
         No arguments were given so generate the calibration images and save
@@ -523,10 +536,13 @@ if __name__ == "__main__":
         projector pixels.  
         """
 
+
         """
         The camera calibration image is photographed with the camera to enable
         compensation for its barrel distortion.  
         """
+        # vertical and horizontal size of the diamonds in pixels
+        diamond_size = 13
         camera_image = \
                 create_calibration_image(camera_pixels, diamond_size)
         camera_image.save("camera_calibration_image.png")
@@ -535,6 +551,8 @@ if __name__ == "__main__":
         The dome calibration image is projected on the dome and photographed
         with the camera in order to estimate the dome projection parameters.
         """
+        # vertical and horizontal size of the diamonds in pixels
+        diamond_size = 3
         dome_image = \
                 create_calibration_image(dome_pixels, diamond_size)
         dome_image.save("dome_calibration_image.png")
@@ -545,29 +563,30 @@ if __name__ == "__main__":
         Treat the first argument as the file name of the camera calibration
         photo and the second as the file name of the dome calibration photo.
         """
-        camera_photo = sys.argv[1]
-        dome_photo = sys.argv[2]
+        camera_photo_filename = sys.argv[1]
+        dome_photo_filename = sys.argv[2]
 
         """
         Find the center pixels of the objects in the camera calibration photo
         and estimate the camera's radial distortion coefficients by minimizing
         the difference between these pixels and camera_pixels.
         """
-        camera_photo_pixels = find_center_pixels(camera_photo)
+        camera_photo = Image.open(camera_photo_filename).convert('L')
+        camera_photo_centers = find_centers(camera_photo)
+        camera_photo.close()
+
+        # convert camera image pixels (row, column) to (x, y) coordinates
+        camera_image_centers = [[  pixel[1] - CAMERA_PIXEL_WIDTH/2 + 0.5,
+                                 -(pixel[0] - CAMERA_PIXEL_HEIGHT/2 + 0.5)]
+                                for pixel in camera_pixels]
 
         x0 = array([1] + [1e-19]*3 + [-1e-18]*3)
-        arguments = (camera_pixels, camera_photo_pixels)
+        arguments = (camera_image_centers, camera_photo_centers)
         results = minimize(camera_distortion, x0, args=arguments,
                            method='Nelder-Mead')
                            #method='L-BFGS-B')
         distortion_coefficients = results['x'][4:]
         print results
-
-        # Debug only
-        x = results['x']
-        camera_cal_debug(x, camera_pixels, camera_photo_pixels)
-        #print "Camera calibration photo pixels\n", camera_photo_pixels
-        #create_calibration_image(photo_pixels, 13).show()
 
         """
         Find the center pixels of the objects in the dome calibration photo
@@ -578,20 +597,34 @@ if __name__ == "__main__":
         """
         # Find the center pixels of the objects in the photograph of the
         # calibration image projected onto the dome.
-        dome_photo_pixels = find_center_pixels(dome_photo)
+        dome_photo = Image.open(dome_photo_filename).convert('L')
+        dome_photo_centers = find_centers(dome_photo)
+        dome_photo.close()
 
         if DEBUG:
-            print "Dome image pixels:"
-            print dome_pixels
-            print "Dome photo pixels with distortion:"
-            print dome_photo_pixels
+            distorted_centers = dome_photo_centers
 
         # Remove the camera's distortion
-        dome_photo_pixels = remove_distortion(dome_photo_pixels,
-                                              distortion_coefficients)
+        dome_photo_centers = remove_distortion(dome_photo_centers,
+                                               distortion_coefficients)
 
-        if DEBUG:
-            print "Dome photo pixels without distortion:"
+        # Convert (x, y) center points to (row, column) center pixels
+        dome_photo_pixels = [[-center_point[1] + CAMERA_PIXEL_HEIGHT/2 - 0.5,
+                              center_point[0] + CAMERA_PIXEL_WIDTH/2 - 0.5]
+                             for center_point in dome_photo_centers]
+
+        if False:
+            print "Dome image pixels:"
+            print dome_pixels
+            print "\nDome calibration photo center point distortion differences:"
+            for i in range(len(dome_photo_centers)):
+                x_differenece = distorted_centers[i][0] - dome_photo_centers[i][0]
+                y_differenece = distorted_centers[i][1] - dome_photo_centers[i][1]
+                print "%3f, %3f" % (x_differenece, y_differenece),
+                if i % 6 == 5:
+                    print
+            print
+            print "\nDome photo center pixels:"
             print dome_photo_pixels
 
         """
@@ -633,72 +666,72 @@ if __name__ == "__main__":
                             (None, None),
                             (None, None)]
 
-        # Find the webcam's field of view by guessing some values and warp
-        # a test image using each value and see which one looks right.
+        # Estimate parameter values by minimizing the difference between
+        # the measured and calculated directions.
+        webcam_theta = 0.5
+        arguments = (dome_pixels, dome_photo_pixels, webcam_theta)
+        results = minimize(dome_distortion, x0, args=arguments,
+                           method='L-BFGS-B', bounds=parameter_bounds)
+        print results
+
+        # Sort results into meaningful parameter names
+        projector_y = results['x'][0]
+        projector_z = results['x'][1]
+        projector_theta = results['x'][2]
+        vertical_offset = results['x'][3]
+        projector_images = calc_projector_images(projector_y, projector_z,
+                                         projector_theta, vertical_offset)
+        mirror_radius = results['x'][4]
+        dome_y = results['x'][5]
+        dome_z = results['x'][6]
+        dome_radius = results['x'][7]
+        animal_y = results['x'][8]
+        animal_z = results['x'][9]
+
+        # Print out the estimated parameter values
+        for image in projector_images:
+            for row in image:
+                print row
+        print "Mirror radius:", mirror_radius
+        print "Dome y-coordinate:", dome_y
+        print "Dome z-coordinate:", dome_z
+        print "Dome radius:", dome_radius
+        print "Animal y-coordinate:", animal_y
+        print "Animal z-coordinate:", animal_z
+        print "Webcam theta:", webcam_theta
+        print "screen_height, screen_width, distance_to_screen"
+        [screen_height, screen_width, distance_to_screen] = \
+        calc_webcam_FoV(webcam_theta)
+        print screen_height, screen_width, distance_to_screen
+
+        # Instantiate DomeProjection class with the estimated parameters and
+        # warp a test image to see how it looks.
         #test_image = Image.open("test_images/WebCameras/Image42.jpg")
         test_image = Image.open("test_images/512_by_512/vertical_lines_16.png")
-        for webcam_theta in [0.5]:
-            # Estimate parameter values by minimizing the difference between
-            # the measured and calculated directions.
-            arguments = (dome_pixels, dome_photo_pixels, webcam_theta)
-            results = minimize(dome_distortion, x0, args=arguments,
-                               method='L-BFGS-B', bounds=parameter_bounds)
-            print results
 
-            # Sort results into meaningful parameter names
-            projector_y = results['x'][0]
-            projector_z = results['x'][1]
-            projector_theta = results['x'][2]
-            vertical_offset = results['x'][3]
-            projector_images = calc_projector_images(projector_y, projector_z,
-                                             projector_theta, vertical_offset)
-            mirror_radius = results['x'][4]
-            dome_y = results['x'][5]
-            dome_z = results['x'][6]
-            dome_radius = results['x'][7]
-            animal_y = results['x'][8]
-            animal_z = results['x'][9]
+                              #screen_height=[screen_height],
+                              #screen_width=[screen_width],
+                              #distance_to_screen=[distance_to_screen],
+        dome = DomeProjection(
+                              screen_height = [1, 1, 1],
+                              screen_width = [1, 1, 1],
+                              distance_to_screen = [0.5, 0.5, 0.5],
+                              pitch = [0, 0, 0],
+                              yaw = [-90, 0, 90],
+                              roll = [0, 0, 0],
+                              image_pixel_width = [512, 512, 512],
+                              image_pixel_height = [512, 512, 512],
+                              first_projector_image=projector_images[0],
+                              second_projector_image=projector_images[1],
+                              mirror_radius=mirror_radius,
+                              dome_center=[0, dome_y, dome_z],
+                              animal_position = [0, animal_y, animal_z])
 
-            # Print out the estimated parameter values
-            for image in projector_images:
-                for row in image:
-                    print row
-            print "Mirror radius:", mirror_radius
-            print "Dome y-coordinate:", dome_y
-            print "Dome z-coordinate:", dome_z
-            print "Dome radius:", dome_radius
-            print "Animal y-coordinate:", animal_y
-            print "Animal z-coordinate:", animal_z
-            print "Webcam theta:", webcam_theta
-            print "screen_height, screen_width, distance_to_screen"
-            [screen_height, screen_width, distance_to_screen] = \
-            calc_webcam_FoV(webcam_theta)
-            print screen_height, screen_width, distance_to_screen
-
-            # Instantiate DomeProjection class with estimated parameters
-                                  #screen_height=[screen_height],
-                                  #screen_width=[screen_width],
-                                  #distance_to_screen=[distance_to_screen],
-            dome = DomeProjection(
-                                  screen_height = [1],
-                                  screen_width = [1],
-                                  distance_to_screen = [0.5],
-                                  pitch = [30],
-                                  yaw = [0],
-                                  roll = [0],
-                                  image_pixel_width = [512],
-                                  image_pixel_height = [512],
-                                  first_projector_image=projector_images[0],
-                                  second_projector_image=projector_images[1],
-                                  mirror_radius=mirror_radius,
-                                  dome_center=[0, dome_y, dome_z],
-                                  animal_position = [0, animal_y, animal_z])
-
-            # Warp a test image with the estimated parameters
-            warped_image = dome.warp_image_for_dome([test_image])
-            warped_image.save("warped_test_image_" + str(webcam_theta) + ".jpg",
-                              "jpeg")
-            
+        # Warp a test image with the estimated parameters
+        warped_image = dome.warp_image_for_dome([test_image, test_image,
+                                                 test_image])
+        warped_image.save("warped_test_image.jpg", "jpeg")
+        
 
 
 
