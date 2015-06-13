@@ -191,8 +191,10 @@ class DomeProjection:
             self._row_vector.append(row_vector)
 
         """
-        Calculate the unit vectors (directions) from the animal inside the dome
-        towards the projection of each projector pixel on to the dome.
+        Make the necessary preparations to calculate the unit vectors
+        (directions) from the animal inside the dome towards the projection
+        of each projector pixel on to the dome.  But delay this time consuming
+        calculation until it is necessary.
         """
         # Calculate the position of the projector's focal point.
         self._projector_focal_point = self._calc_projector_focal_point()
