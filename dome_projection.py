@@ -961,18 +961,3 @@ def flat_display_direction(row, column, screen_height, screen_width,
     return array([x/r, y/r, z/r])
 
 
-def plot_magnitude(array_of_vectors):
-    """
-    Plot an image of the magnitude of 3D vectors which are stored in a 2D
-    array.  The luminance of each pixel is proportional to the normalized
-    magnitude of its vector so larger magnitudes have lighter pixels.
-    """
-    dimensions = shape(array_of_vectors)
-    #pixels = ones(dimensions, dtype=uint8)
-    magnitudes = linalg.norm(array_of_vectors, axis=-1)
-    normalizationFactor = max(magnitudes.flat)
-    pixels = array(255*magnitudes/normalizationFactor, dtype=uint8)
-    magnitude_image = Image.fromarray(pixels, mode='L')
-    magnitude_image.show()
-
-
