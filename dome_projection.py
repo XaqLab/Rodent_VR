@@ -15,15 +15,15 @@ point of view.  The viewer in the dome display is the mouse and the viewer in
 OpenGL is a virtual camera.  
 """
 
-DEBUG = True
+DEBUG = False
 
 if DEBUG:
-    from numpy import arctan, arctan2, arccos, where
+    from numpy import arctan2, arccos, where
     import matplotlib.pyplot as plot
     from matplotlib.backends.backend_pdf import PdfPages
 
 from numpy import array, ones, zeros, dstack, linalg, dot, cross
-from numpy import sqrt, sin, cos, tan, pi
+from numpy import sqrt, sin, cos, tan, pi, arctan
 from numpy import uint8
 from random import randint
 from PIL import Image
@@ -861,6 +861,47 @@ class DomeProjection:
         plot.show()
 
 
+    def get_mirror_radius(self):
+        return self._mirror_radius
+
+
+    def get_dome_radius(self):
+        return self._dome_radius
+
+
+    def get_dome_position(self):
+        return [self._dome_center[1], self._dome_center[2]]
+
+
+    def get_animal_position(self):
+        return [self._animal_position[1], self._animal_position[2]]
+
+
+    def get_frustum_parameters(self):
+        """
+        This funciton calculates the y and z coordinates of the projector's focal
+        point along with it's horizontal field of view, and it's vertical throw.
+        """
+        # this one is easy
+        vertical_offset = self._first_projector_image[2][2]
+    
+        # calculate theta
+        x1 = self._first_projector_image[1][0]
+        x2 = self._second_projector_image[1][0]
+        y1 = self._first_projector_image[1][1]
+        y2 = self._second_projector_image[1][1]
+        theta = arctan((x2 - x1) / (y1 - y2))
+    
+        # calculate y
+        y = y1 + x1 / tan(theta)
+    
+        # calculate z
+        z2_low = self._second_projector_image[2][2]
+        slope = (vertical_offset - z2_low) / (y1 - y2)
+        z = vertical_offset + slope * (y - y1)
+        
+        return [theta, vertical_offset, y, z]
+
 
 
 ###############################################################################
@@ -869,7 +910,7 @@ class DomeProjection:
 
 def flat_display_directions(screen_height, screen_width, pixel_height,
                             pixel_width, distance_to_screen,
-                            vertical_offset = 0, phi = 0, yaw = 0):
+                            vertical_offset = 0, pitch = 0, yaw = 0):
     """
     Return unit vectors that point from the viewer towards each pixel
     """
@@ -880,36 +921,36 @@ def flat_display_directions(screen_height, screen_width, pixel_height,
                     flat_display_direction(row, column, screen_height,
                                            screen_width, pixel_height,
                                            pixel_width, distance_to_screen,
-                                           vertical_offset, phi, yaw)
+                                           vertical_offset, pitch, yaw)
 
     return directions
 
 
 def flat_display_direction(row, column, screen_height, screen_width,
                            pixel_height, pixel_width, distance_to_screen,
-                           vertical_offset = 0, phi = 0, yaw = 0):
+                           vertical_offset = 0, pitch = 0, yaw = 0):
     """
     Return a unit vector that points from the viewer towards the specified
     pixel on a flat screen display.  The display is along the positive y-axis
     relative to the viewer.  The positive x-axis is to the viewer's right
     and the positive z-axis is up.  The vertical_offset parameter shifts the
-    screen in the positive z-direction.  Phi is the angle between the vector
+    screen in the positive z-direction.  Pitch is the angle between the vector
     from the origin to the center of the image and the x-y plane.  Yaw is the
     angle of ratation in the x-y plane.  It is positive to the right and
     negative to the left.
     """
 
-    x_zero_yaw_zero_phi = (float(screen_width) / pixel_width
-                           * (column + 0.5 - pixel_width/2.0))
-    y_zero_yaw_zero_phi = distance_to_screen
-    z_zero_yaw_zero_phi = (float(screen_height) / pixel_height
-                           * (pixel_height/2.0 - (row + 0.5)))
+    x_zero_yaw_zero_pitch = (float(screen_width) / pixel_width
+                             * (column + 0.5 - pixel_width/2.0))
+    y_zero_yaw_zero_pitch = distance_to_screen
+    z_zero_yaw_zero_pitch = (float(screen_height) / pixel_height
+                             * (pixel_height/2.0 - (row + 0.5)))
 
-    x_zero_yaw = x_zero_yaw_zero_phi
-    y_zero_yaw = (y_zero_yaw_zero_phi * cos(phi)
-                  - z_zero_yaw_zero_phi * sin(phi))
-    z_zero_yaw = (z_zero_yaw_zero_phi * cos(phi) 
-                  + y_zero_yaw_zero_phi * sin(phi))
+    x_zero_yaw = x_zero_yaw_zero_pitch
+    y_zero_yaw = (y_zero_yaw_zero_pitch * cos(pitch)
+                  - z_zero_yaw_zero_pitch * sin(pitch))
+    z_zero_yaw = (z_zero_yaw_zero_pitch * cos(pitch) 
+                  + y_zero_yaw_zero_pitch * sin(pitch))
 
     x = x_zero_yaw * cos(yaw) + y_zero_yaw * sin(yaw)
     y = y_zero_yaw * cos(yaw) - x_zero_yaw * sin(yaw)
