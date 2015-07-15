@@ -11,15 +11,17 @@ When the calibration image and the photograph of the calibration image are passe
 to this script as arguments, it returns the estimated parameters.
 """
 
+# import stuff from standard libraries
 import sys
 from PIL import Image
 from numpy import array, ones, uint8, mean, dot, tan, arctan, sin, cos, linalg
-from numpy import histogram, diff, sign
-from scipy.optimize import minimize, fsolve
+from scipy.optimize import minimize
 from scipy import ndimage
-from dome_projection import DomeProjection, flat_display_direction
+
+# import stuff for our projector setup and web camera
+from dome_projection import DomeProjection
+from dome_projection import flat_display_direction
 import webcam
-from reverse_mapping import update_pixels
 
 
 DEBUG = True
@@ -61,46 +63,25 @@ def create_diamond_image(center_pixels, diamond_size,
     return Image.fromarray(pixels, mode='L')
 
 
-def create_calibration_image(seed_image):
+def create_calibration_image():
     """
-    Make a calibration image which repeats an image at several yaw values to
-    cover the required field of view.  
+    Make a calibration image which projects spots of light on the dome at
+    desired animal viewing angles, described by yaw and pitch.  These viewing
+    angles depend on the defaulte parameter values in dome_projection.
     """
-
-    [image_width, image_height] = seed_image.size
-
-    yaw_angles = [-90, -60, -30, 0, 30, 60, 90]
-    # just to find zero pitch
-    yaw_angles = [0]
-    
-    dome = DomeProjection(screen_width = [1]*len(yaw_angles),
-                          screen_height = [1]*len(yaw_angles),
-                          distance_to_screen = [0.5]*len(yaw_angles),
-                          pitch = [0]*len(yaw_angles),
-                          yaw = yaw_angles,
-                          roll = [0]*len(yaw_angles),
-                          image_pixel_width=[image_width]*len(yaw_angles),
-                          image_pixel_height=[image_height]*len(yaw_angles),
-                          projector_pixel_width=1280,
-                          projector_pixel_height=720)
-
-    # create a warped image with the seed at each yaw value
-    warped_image = dome.warp_image_for_dome([seed_image]*len(yaw_angles))
-    warped_image.show()
-
-    # find the center points of the objects in the warped image
-    centers = find_centers(warped_image.convert('L'), blur=0)
-
-    # convert center points (x, y) to center pixels (row, column)
-    x_center = CAMERA_PIXEL_WIDTH/2 - 0.5
-    y_center = CAMERA_PIXEL_HEIGHT/2 - 0.5
-    center_pixels = [[-point[1] + y_center, point[0] + x_center]
-                        for point in centers]
-    center_pixels = [[int(round(pixel[0])), int(round(pixel[1]))]
-                        for pixel in center_pixels]
+    # find the pixels that go with those directions
+    dome = DomeProjection()
+    # guess some pixel values
+    #pixels = [[469, 1160], [547, 948], [569, 640], [547, 331], [469, 119],
+    #          [300, 895], [360, 804], [380, 639], [360, 475], [300, 384]]
+    pixels = [[463, 1163], [543, 943], [563, 643], [543, 333], [463, 113],
+              [303, 893], [363, 803], [383, 633], [363, 473], [303, 383]]
+    calibration_pixels = \
+            dome.find_projector_pixels(dome.calibration_directions, pixels)
+    print calibration_pixels
 
     # create the calibration image using this center pixels
-    calibration_image = create_diamond_image(center_pixels, 3)
+    calibration_image = create_diamond_image(calibration_pixels, 1)
     calibration_image.show()
 
     return calibration_image
@@ -207,35 +188,6 @@ def calc_projector_images(y, z, theta, vertical_offset):
     return [image1, image2]
 
 
-def calc_frustum_parameters(image1, image2):
-    """
-    Inverse of calc_projector_images.
-    This funciton calculates the y and z coordinates of the projector's focal
-    point along with it's horizontal field of view, and it's vertical throw.
-    This is done to reduce the degrees of freedom to the minimum necessary for
-    parameter estimation using SciPy's minimization routine.
-    """
-    # this one is easy
-    vertical_offset = image1[2][2]
-
-    # calculate theta
-    x1 = image1[1][0]
-    x2 = image2[1][0]
-    y1 = image1[1][1]
-    y2 = image2[1][1]
-    theta = arctan((x2 - x1) / (y1 - y2))
-
-    # calculate y
-    y = y1 + x1 / tan(theta)
-
-    # calculate z
-    z2_low = image2[2][2]
-    slope = (vertical_offset - z2_low) / (y1 - y2)
-    z = vertical_offset + slope * (y - y1)
-    
-    return [y, z, theta, vertical_offset]
-
-
 def dome_distortion(x, image_pixels, photo_pixels):
     """
     Calculate the sum of the square differences between measured and calculated
@@ -256,8 +208,8 @@ def dome_distortion(x, image_pixels, photo_pixels):
     animal_y = x[8]
     animal_z = x[9]
 
-    # Calculate the directions to photo_pixels using the camera's estimated
-    # field of view.
+    # Calculate the viewing directions to photo_pixels using the camera's
+    # estimated field of view.
     measured_directions = []
     for photo_pixel in photo_pixels:
         [row, column] = photo_pixel
@@ -278,13 +230,12 @@ def dome_distortion(x, image_pixels, photo_pixels):
                       dome_radius = dome_radius,
                       animal_position = [0, animal_y, animal_z])
 
-    # Calculate the directions to the center pixels in the calibration
-    # image using these parameters.
+    # Calculate the viewing directions for image_pixels using these parameters.
     dome = DomeProjection(**parameters)
     calculated_directions = []
     for image_pixel in image_pixels:
         [row, col] = image_pixel
-        calculated_direction = dome._dome_display_direction(row, col)[1]
+        calculated_direction = dome.dome_display_direction(row, col)[1]
         calculated_directions.append(calculated_direction)
     #if DEBUG:
     if False:
@@ -315,16 +266,6 @@ def dome_distortion(x, image_pixels, photo_pixels):
 # Main program starts here
 ###############################################################################
 if __name__ == "__main__":
-    """
-    Define seed_pixels for generation of the dome calibration image. This image
-    is used to estimate the dome projection geometry.  Because there is a
-    mirror involved, these pixels must be listed from right to left and then
-    top to bottom so they can be matched with the correct pixels in the photo.
-    """
-
-    seed_pixels = [[285, 640], [325, 640], [365, 640], [405, 640], [445, 640]]
-    # just to locate the pixel at zero pitch
-    seed_pixels = [[row, 640] for row in range(325, 455, 5)]
 
     if len(sys.argv) == 1:
         """
@@ -333,16 +274,8 @@ if __name__ == "__main__":
         photographed with a camera in order to estimate the dome projection
         parameters.
         """
-        # vertical and horizontal size of the diamonds in pixels
-        diamond_size = 3
-        seed_image = \
-                create_diamond_image(seed_pixels, diamond_size)
         print "Creating calibration image..."
-        calibration_pixels = [[469, 1160], [547, 948], [569, 640], [547, 331],
-                              [469, 119], [300, 895], [360, 804], [380, 639],
-                              [360, 475], [300, 384]]
-        calibration_pixels = update_pixels(parameters, calibration_pixels)
-        dome_image = create_calibration_image(seed_image)
+        dome_image = create_calibration_image()
         dome_image.save("dome_calibration_image.png")
 
     elif len(sys.argv) == 3:
@@ -505,7 +438,5 @@ if __name__ == "__main__":
                                                  test_image])
         warped_image.save("warped_test_image.jpg", "jpeg")
         
-
-
 
 

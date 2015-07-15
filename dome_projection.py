@@ -6,27 +6,33 @@ This class modifies (a.k.a. warps) images from OpenGL for display on a
 hemispherical screen in a virtual reality system.  A hemispherical mirror is
 used to allow a single projector to achieve a very wide field of view.  The
 goal in our mouse experiments is to achieve a minimum field of view of -20
-degrees to 60 degrees verically and 270 degrees horizontally.  The OpenGL
-images are modified to eliminate the distortion introduced by the hemispherical
-mirror and the hemispherical screen.  This is achieved by a pixel level mapping
-which sets the RGB values for each projector pixel using the RGB values of
-the pixel in the OpenGL image which is in the same direction from the viewer's
-point of view.  The viewer in the dome display is the mouse and the viewer in
-OpenGL is a virtual camera.  
+degrees to 60 degrees verically and -135 to 135 degrees horizontally.  The
+OpenGL images are modified to eliminate the distortion introduced by the
+hemispherical mirror and the hemispherical screen.  This is achieved by a
+pixel level mapping which sets the RGB values for each projector pixel using
+the RGB values of the pixel in the OpenGL image which is in the same direction
+from the viewer's point of view.  The viewer in the dome display is the mouse
+and the viewers in OpenGL are virtual cameras.  
 """
 
 DEBUG = False
 
 if DEBUG:
-    from numpy import arctan2, arccos, where
     import matplotlib.pyplot as plot
     from matplotlib.backends.backend_pdf import PdfPages
 
 from numpy import array, ones, zeros, dstack, linalg, dot, cross
 from numpy import sqrt, sin, cos, tan, pi, arctan
+from numpy import arctan2, arccos, where
 from numpy import uint8
 from random import randint
 from PIL import Image
+from scipy.optimize import fmin_powell
+# imports for PyInstaller
+import scipy.linalg.cython_blas
+import scipy.linalg.cython_lapack
+import scipy.special._ufuncs_cxx
+import scipy.integrate
 
 class DomeProjection:
     """
@@ -145,6 +151,18 @@ class DomeProjection:
         self._dome_radius = dome_radius
         self._animal_position = animal_position
 
+        #######################################################################
+        # Properties used for calibration
+        #######################################################################
+        # make a list of the desired directions for calibration
+        self.calibration_directions = []
+        for pitch in [0, 45]:
+            for yaw in [-90, -45, 0, 45, 90]:
+                x = sin(yaw * pi/180) * cos(pitch * pi/180)
+                y = cos(yaw * pi/180) * cos(pitch * pi/180)
+                z = sin(pitch * pi/180)
+                self.calibration_directions.append([x, y, z])
+    
         #######################################################################
         # Properties used to share results between method calls
         #######################################################################
@@ -342,12 +360,12 @@ class DomeProjection:
                                               self._projector_pixel_width, 3])
         for row in range(self._projector_pixel_height):
             for column in range(self._projector_pixel_width):
-                [mask, direction] = self._dome_display_direction(row, column)
+                [mask, direction] = self.dome_display_direction(row, column)
                 self._projector_mask[row, column] = mask
                 self._animal_view_directions[row, column] = direction
 
 
-    def _dome_display_direction(self, row, column):
+    def dome_display_direction(self, row, column):
         """
         Return the unit vector (direction) from the viewer inside the dome
         towards the projection of the specified projector pixel on to the dome.
@@ -903,6 +921,51 @@ class DomeProjection:
         return [theta, vertical_offset, y, z]
 
 
+    def _direction_differences(self, projector_pixels, desired_directions):
+        """
+        Calculate the sum of the square differences between the desired and actual
+        directions.
+        """
+        assert len(projector_pixels) == 2*len(desired_directions)
+    
+        # find the animal viewing directions for the pixels in projector_pixels
+        actual_directions = []
+        for n in range(len(desired_directions)):
+            row = int(projector_pixels[2*n])
+            col = int(projector_pixels[2*n + 1])
+            actual_direction = self.dome_display_direction(row, col)[1]
+            actual_directions.append(actual_direction)
+    
+        value = sum([linalg.norm(desired_directions[i] - actual_directions[i])
+                                 for i in range(len(desired_directions))])
+        return value
+
+
+    def find_projector_pixels(self, directions, pixels=[]):
+        """
+        Search the projector pixels to find the pixels that minimize the square
+        differences between the desired directions and the actual directions.
+        """
+        if not pixels:
+            # no pixel values provided, guess pixels that hit the mirror
+            pixels = [self._projector_pixel_height - 1,
+                      self._projector_pixel_width/2]*len(directions)
+
+        # Find the projector pixels by minimizing the difference between
+        # the desired and actual directions.
+        arguments = tuple([directions])
+        results = fmin_powell(self._direction_differences, pixels, args=arguments,
+                          xtol=1, disp=False)
+    
+        # Sort the final results into pixels
+        projector_pixels = []
+        for n in range(len(results)/2):
+            row = int(round(results[2*n]))
+            col = int(round(results[2*n + 1]))
+            projector_pixels.append([row, col])
+    
+        return projector_pixels
+
 
 ###############################################################################
 # Functions called by class methods
@@ -959,5 +1022,69 @@ def flat_display_direction(row, column, screen_height, screen_width,
     r = sqrt(x**2 + y**2 + z**2)
 
     return array([x/r, y/r, z/r])
+
+
+def calc_projector_images(y, z, theta, vertical_offset):
+    """
+    Calculate the two projector_image parameters that the dome class requires
+    from a smaller set of parameters that are more parameter estimation
+    friendly. The location of the projector's focal point is given by y and z.
+    Theta is half the angle between lines from the focal point to the left and
+    right sides of the image.  The lens offset of the projector is described by
+    vertical_offset.
+    """
+    # distance to first image, chosen to match measurements
+    y1 = 0.436
+    # calculate x from theta and the distance between the focal point and image
+    x1 = (y - y1) * tan(theta)
+    # calculate z by assuming a 16:9 aspect ratio 
+    z1_low = vertical_offset
+    z1_high = z1_low + 2 * 9.0/16.0 * x1
+    image1 = [[ -x1,  y1,  z1_high ],
+              [  x1,  y1,  z1_high ],
+              [  x1,  y1,  z1_low ],
+              [ -x1,  y1,  z1_low ]]
+
+    # do it again for image2
+    y2 = 0.265
+    x2 = (y - y2) * tan(theta)
+    slope = (vertical_offset - z) / (y - y1)
+    z2_low = z + slope * (y - y2)
+    z2_high = z2_low + 2 * 9.0/16.0 * x2
+    image2 = [[ -x2,  y2,  z2_high ],
+              [  x2,  y2,  z2_high ],
+              [  x2,  y2,  z2_low ],
+              [ -x2,  y2,  z2_low ]]
+    
+    return [image1, image2]
+
+
+def calc_frustum_parameters(image1, image2):
+    """
+    Inverse of calc_projector_images.
+    This funciton calculates the y and z coordinates of the projector's focal
+    point along with it's horizontal field of view, and it's vertical throw.
+    This is done to reduce the degrees of freedom to the minimum necessary for
+    parameter estimation using SciPy's minimization routine.
+    """
+    # this one is easy
+    vertical_offset = image1[2][2]
+
+    # calculate theta
+    x1 = image1[1][0]
+    x2 = image2[1][0]
+    y1 = image1[1][1]
+    y2 = image2[1][1]
+    theta = arctan((x2 - x1) / (y1 - y2))
+
+    # calculate y
+    y = y1 + x1 / tan(theta)
+
+    # calculate z
+    z2_low = image2[2][2]
+    slope = (vertical_offset - z2_low) / (y1 - y2)
+    z = vertical_offset + slope * (y - y1)
+    
+    return [y, z, theta, vertical_offset]
 
 
