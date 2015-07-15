@@ -156,8 +156,8 @@ class DomeProjection:
         #######################################################################
         # make a list of the desired directions for calibration
         self.calibration_directions = []
-        for pitch in [0, 45]:
-            for yaw in [-90, -45, 0, 45, 90]:
+        for pitch in [0, 30, 60]:
+            for yaw in [0, 45, 90]:
                 x = sin(yaw * pi/180) * cos(pitch * pi/180)
                 y = cos(yaw * pi/180) * cos(pitch * pi/180)
                 z = sin(pitch * pi/180)

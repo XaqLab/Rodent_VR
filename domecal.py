@@ -12,9 +12,19 @@ PROJECTOR_PIXEL_WIDTH = 1280
 PROJECTOR_PIXEL_HEIGHT = 720
 
 # Color constants
-BACKGROUND = win32api.RGB(0, 0, 0)
-FOREGROUND = win32api.RGB(255, 255, 255)
+BLACK = win32api.RGB(0, 0, 0)
+RED = win32api.RGB(255, 0, 0)
+GREEN = win32api.RGB(0, 255, 0)
+BLUE = win32api.RGB(0, 0, 255)
+YELLOW = win32api.RGB(255, 255, 0)
+CYAN = win32api.RGB(0, 255, 255)
+PURPLE = win32api.RGB(255, 0, 255)
+WHITE = win32api.RGB(255, 255, 255)
+PIXEL_COLOR = (WHITE, GREEN, WHITE,
+               CYAN, YELLOW, CYAN,
+               WHITE, GREEN, WHITE)
 
+# key codes not found in win32con
 VK_OEM_PLUS = 0xbb
 VK_OEM_MINUS = 0xbd
 VK_O = 0x4f
@@ -50,8 +60,11 @@ class MainWindow():
         self._parameter_values.extend([animal_y, animal_z])
         self._parameter_values.extend(initial_geometry.get_frustum_parameters())
         # guess some initial projector pixel values
-        self._pixels = [[469, 1160], [547, 948], [569, 640], [547, 331], [469, 119],
-                        [300, 895], [360, 804], [380, 639], [360, 475], [300, 384]]
+        self._pixels = [[570, 640], [548, 332], [470, 118],
+                        [435, 640], [412, 425], [339, 296],
+                        [333, 640], [318, 527], [273, 471]]
+        #self._pixels = [[469, 1160], [547, 948], [569, 640], [547, 331], [469, 119],
+        #                [300, 895], [360, 804], [380, 639], [360, 475], [300, 384]]
         # setup the window
         self._name = "MainWindow"
         self._title = "Dome Calibration"
@@ -121,6 +134,8 @@ class MainWindow():
                 for i in range(NUM_PARAMETERS):
                     parameter_file.write("%s = %f\n" % (self._parameter_names[i],
                                         self._parameter_values[i]))
+                for pixel in self._pixels:
+                    parameter_file.write("%d, %d\n" % (pixel[0], pixel[1]))
                 parameter_file.close()
             except:
                 win32gui.MessageBox(None, "Error saving parameter file!",
@@ -141,7 +156,8 @@ class MainWindow():
         if file_name:
             try:
                 parameter_file = open(file_name, "r")
-                for line in parameter_file:
+                for i in range(NUM_PARAMETERS):
+                    line = parameter_file.readline()
                     parameter_name, parameter_value = line.split(" = ")
                     if parameter_name in self._parameter_names:
                         index = self._parameter_names.index(parameter_name)
@@ -150,6 +166,10 @@ class MainWindow():
                         win32gui.MessageBox(None, "Unknown parameter!",
                                             "Error", win32con.MB_ICONERROR |
                                             win32con.MB_OK)
+                for i in range(len(self._pixels)):
+                    line = parameter_file.readline()
+                    row, col = line.split(", ")
+                    self._pixels[i] = [int(row), int(col)]
                 parameter_file.close()
             except:
                 win32gui.MessageBox(None, "Error reading parameter file!",
@@ -174,10 +194,6 @@ class MainWindow():
         elif msg == win32con.WM_DESTROY:
             win32gui.DestroyWindow(hwnd)
 
-        #elif msg == win32con.WM_SYSCOMMAND:
-        #    if wparam == win32con.SC_CLOSE:
-        #        win32gui.PostQuitMessage(0)
-
         elif msg == win32con.WM_CLOSE:
             win32gui.PostQuitMessage(0)
 
@@ -185,26 +201,22 @@ class MainWindow():
             win32gui.PostQuitMessage(0)
 
         else:
-            #messages_to_ignore = [6, 8, 28, 31, 32, 33, 132, 133, 134, 512, 645]
-            #if msg not in messages_to_ignore:
-                #print "unhandeled message:", msg, wparam, lparam
             return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
 
 
     # Draw the window
     def OnPaint(self, hwnd, msg, wparam, lparam):
         dc, ps = win32gui.BeginPaint(hwnd)
-        brush = win32gui.CreateSolidBrush(BACKGROUND)
+        brush = win32gui.CreateSolidBrush(BLACK)
         win32gui.SelectObject(dc, brush)
         win32gui.Rectangle(dc, 0, 0, PROJECTOR_PIXEL_WIDTH - 1,
                            PROJECTOR_PIXEL_HEIGHT - 1)
-        #win32gui.ExtFloodFill(dc, PROJECTOR_PIXEL_WIDTH/2,
-                              #PROJECTOR_PIXEL_HEIGHT/2, BACKGROUND,
-                              #win32con.FLOODFILLBORDER)
-        for pixel in self._pixels:
-            win32gui.SetPixel(dc, int(pixel[1]), int(pixel[0]), FOREGROUND)
-        win32gui.SetBkColor(dc, BACKGROUND);
-        win32gui.SetTextColor(dc, FOREGROUND)
+        pixel_color = win32api.RGB(0, 255, 0)
+        for i in range(len(self._pixels)):
+            pixel = self._pixels[i]
+            win32gui.SetPixel(dc, int(pixel[1]), int(pixel[0]), PIXEL_COLOR[i])
+        win32gui.SetBkColor(dc, BLACK);
+        win32gui.SetTextColor(dc, WHITE)
         win32gui.EndPaint(hwnd, ps)
         return 0
 
@@ -258,13 +270,9 @@ class MainWindow():
                                    self._parameter_values[self._current_parameter]))
     
             elif wparam == VK_O:
-                # read parameters from a file
+                # read parameters and pixels from a file
                 self.openParameterFile(hwnd)
-                # update pixels using new parameters and redraw screen
-                dome = DomeProjection(**self._parameters())
-                self._pixels = \
-                        dome.find_projector_pixels(dome.calibration_directions,
-                                                   self._pixels)
+                # redraw the screen using the new pixels
                 win32gui.RedrawWindow(hwnd, None, None, win32con.RDW_INVALIDATE |
                                       win32con.RDW_INTERNALPAINT)
     
@@ -285,10 +293,10 @@ class MainWindow():
                 print "keypress: %x" % wparam
     
             dc = win32gui.GetDC(hwnd)
-            brush = win32gui.CreateSolidBrush(BACKGROUND)
+            brush = win32gui.CreateSolidBrush(BLACK)
             win32gui.SelectObject(dc, brush)
-            win32gui.SetTextColor(dc, FOREGROUND)
-            win32gui.SetBkColor(dc, BACKGROUND);
+            win32gui.SetTextColor(dc, WHITE)
+            win32gui.SetBkColor(dc, BLACK);
             debug = win32gui.DrawText(dc, display_string,
                                       len(display_string),
                                       self._onscreen_display,
@@ -313,7 +321,6 @@ class MainWindow():
         win32gui.RedrawWindow(hwnd, None, None, win32con.RDW_INVALIDATE |
                               win32con.RDW_INTERNALPAINT)
         win32gui.InvalidateRect(hwnd, self._onscreen_display, True)
-
 
 
 
