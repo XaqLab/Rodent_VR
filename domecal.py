@@ -97,6 +97,8 @@ class MainWindow():
         # This is used to stop autorepeat which is annoying for our purposes
         self._first_keydown = True
         self._parameter_changed = False
+        self._display_string = ""
+        self._show_help = False
 
 
     # Return the parameter dictionary used to instantiate DomeProjection
@@ -127,20 +129,25 @@ class MainWindow():
                 'DefExt' : "txt",
                 'Flags' : win32con.OFN_EXPLORER | win32con.OFN_FILEMUSTEXIST |
                 win32con.OFN_HIDEREADONLY}
-        file_name = win32gui.GetSaveFileNameW(**args)[0]
-        if file_name:
-            try:
-                parameter_file = open(file_name, "w")
-                for i in range(NUM_PARAMETERS):
-                    parameter_file.write("%s = %f\n" % (self._parameter_names[i],
-                                        self._parameter_values[i]))
-                for pixel in self._pixels:
-                    parameter_file.write("%d, %d\n" % (pixel[0], pixel[1]))
-                parameter_file.close()
-            except:
-                win32gui.MessageBox(None, "Error saving parameter file!",
-                                "Error", win32con.MB_ICONERROR |
-                                win32con.MB_OK)
+        try:
+            file_name = win32gui.GetSaveFileNameW(**args)[0]
+            if file_name:
+                try:
+                    parameter_file = open(file_name, "w")
+                    for i in range(NUM_PARAMETERS):
+                        parameter_file.write("%s = %f\n" %
+                                             (self._parameter_names[i],
+                                              self._parameter_values[i]))
+                    for pixel in self._pixels:
+                        parameter_file.write("%d, %d\n" % (pixel[0], pixel[1]))
+                    parameter_file.close()
+                except:
+                    win32gui.MessageBox(None, "Error saving parameter file!",
+                                    "Error", win32con.MB_ICONERROR |
+                                    win32con.MB_OK)
+        except:
+            # no file selected
+            pass
 
     
     # Read the parameters from a text file
@@ -151,30 +158,33 @@ class MainWindow():
                 'DefExt' : "txt",
                 'Flags' : win32con.OFN_EXPLORER | win32con.OFN_FILEMUSTEXIST |
                 win32con.OFN_HIDEREADONLY}
-        file_name = win32gui.GetOpenFileNameW(**args)[0]
-        print file_name
-        if file_name:
-            try:
-                parameter_file = open(file_name, "r")
-                for i in range(NUM_PARAMETERS):
-                    line = parameter_file.readline()
-                    parameter_name, parameter_value = line.split(" = ")
-                    if parameter_name in self._parameter_names:
-                        index = self._parameter_names.index(parameter_name)
-                        self._parameter_values[index] = float(parameter_value)
-                    else:
-                        win32gui.MessageBox(None, "Unknown parameter!",
-                                            "Error", win32con.MB_ICONERROR |
-                                            win32con.MB_OK)
-                for i in range(len(self._pixels)):
-                    line = parameter_file.readline()
-                    row, col = line.split(", ")
-                    self._pixels[i] = [int(row), int(col)]
-                parameter_file.close()
-            except:
-                win32gui.MessageBox(None, "Error reading parameter file!",
-                                    "Error", win32con.MB_ICONERROR |
-                                    win32con.MB_OK)
+        try:
+            file_name = win32gui.GetOpenFileNameW(**args)[0]
+            if file_name:
+                try:
+                    parameter_file = open(file_name, "r")
+                    for i in range(NUM_PARAMETERS):
+                        line = parameter_file.readline()
+                        parameter_name, parameter_value = line.split(" = ")
+                        if parameter_name in self._parameter_names:
+                            index = self._parameter_names.index(parameter_name)
+                            self._parameter_values[index] = float(parameter_value)
+                        else:
+                            win32gui.MessageBox(None, "Unknown parameter!",
+                                                "Error", win32con.MB_ICONERROR |
+                                                win32con.MB_OK)
+                    for i in range(len(self._pixels)):
+                        line = parameter_file.readline()
+                        row, col = line.split(", ")
+                        self._pixels[i] = [int(row), int(col)]
+                    parameter_file.close()
+                except:
+                    win32gui.MessageBox(None, "Error reading parameter file!",
+                                        "Error", win32con.MB_ICONERROR |
+                                        win32con.MB_OK)
+        except:
+            # no file selected
+            pass
 
 
     # This function handles all the call backs from the window
@@ -212,9 +222,17 @@ class MainWindow():
         win32gui.Rectangle(dc, 0, 0, PROJECTOR_PIXEL_WIDTH - 1,
                            PROJECTOR_PIXEL_HEIGHT - 1)
         pixel_color = win32api.RGB(0, 255, 0)
+        diamond_size = 3
+        half_size = (diamond_size - 1)/2
         for i in range(len(self._pixels)):
             pixel = self._pixels[i]
-            win32gui.SetPixel(dc, int(pixel[1]), int(pixel[0]), PIXEL_COLOR[i])
+            center_row = int(pixel[0])
+            center_col = int(pixel[1])
+            for row in range(center_row - half_size,
+                             center_row + half_size + 1):
+                for col in range(center_col - half_size + abs(row - center_row),
+                                 center_col + half_size + 1 - abs(row - center_row)):
+                    win32gui.SetPixel(dc, col, row, PIXEL_COLOR[i])
         win32gui.SetBkColor(dc, BLACK);
         win32gui.SetTextColor(dc, WHITE)
         win32gui.EndPaint(hwnd, ps)
@@ -227,12 +245,12 @@ class MainWindow():
         if self._first_keydown:
             # only update once, ignore keyboard autorepeat
             self._first_keydown = False
-            display_string = ""
+            self._display_string = ""
             if wparam == win32con.VK_UP:
                 self._parameter_changed = True
                 self._parameter_values[self._current_parameter] += \
                         self._increments[self._current_parameter]
-                display_string = ("%s = %.3f" %
+                self._display_string = ("%s = %.3f" %
                                   (self._parameter_names[self._current_parameter],
                                    self._parameter_values[self._current_parameter]))
     
@@ -240,7 +258,7 @@ class MainWindow():
                 self._parameter_changed = True
                 self._parameter_values[self._current_parameter] -= \
                         self._increments[self._current_parameter]
-                display_string = ("%s = %.3f" %
+                self._display_string = ("%s = %.3f" %
                                   (self._parameter_names[self._current_parameter],
                                    self._parameter_values[self._current_parameter]))
     
@@ -249,23 +267,23 @@ class MainWindow():
                 if (self._current_parameter < 0):
                     # roll around to last parameter
                     self._current_parameter = NUM_PARAMETERS - 1
-                display_string = ("%s = %.3f" %
+                self._display_string = ("%s = %.3f" %
                                   (self._parameter_names[self._current_parameter],
                                    self._parameter_values[self._current_parameter]))
     
             elif wparam == win32con.VK_RIGHT:
                 self._current_parameter = self._current_parameter + 1
                 self._current_parameter = self._current_parameter % NUM_PARAMETERS
-                display_string = ("%s = %.3f" %
+                self._display_string = ("%s = %.3f" %
                                   (self._parameter_names[self._current_parameter],
                                    self._parameter_values[self._current_parameter]))
     
             elif wparam == win32con.VK_CONTROL:
-                display_string = "increment = %.3f" % \
+                self._display_string = "increment = %.3f" % \
                         self._increments[self._current_parameter]
     
             elif wparam == win32con.VK_SHIFT:
-                display_string = ("%s = %.3f" %
+                self._display_string = ("%s = %.3f" %
                                   (self._parameter_names[self._current_parameter],
                                    self._parameter_values[self._current_parameter]))
     
@@ -281,24 +299,24 @@ class MainWindow():
     
             elif wparam == VK_OEM_PLUS:
                 self._increments[self._current_parameter] *= 10.0
-                display_string = "increment = %.3f" % \
+                self._display_string = "increment = %.3f" % \
                         self._increments[self._current_parameter]
     
             elif wparam == VK_OEM_MINUS:
                 self._increments[self._current_parameter] /= 10.0
-                display_string = "increment = %.3f" % \
+                self._display_string = "increment = %.3f" % \
                         self._increments[self._current_parameter]
     
             else:
-                print "keypress: %x" % wparam
+                self._show_help = True
     
             dc = win32gui.GetDC(hwnd)
             brush = win32gui.CreateSolidBrush(BLACK)
             win32gui.SelectObject(dc, brush)
             win32gui.SetTextColor(dc, WHITE)
             win32gui.SetBkColor(dc, BLACK);
-            debug = win32gui.DrawText(dc, display_string,
-                                      len(display_string),
+            debug = win32gui.DrawText(dc, self._display_string,
+                                      len(self._display_string),
                                       self._onscreen_display,
                                       win32con.DT_SINGLELINE |
                                       win32con.DT_CENTER |
@@ -311,16 +329,33 @@ class MainWindow():
         # reset _first_keydown for the next keypress
         self._first_keydown = True
         if self._parameter_changed:
+            self._parameter_changed = False
             # update the projector pixels using the new parameter values
             dome = DomeProjection(**self._parameters())
             self._pixels = \
                     dome.find_projector_pixels(dome.calibration_directions,
                                                self._pixels)
-            self._parameter_changed = False
-        # redraw the window to erase onscreen display of the parameter value
-        win32gui.RedrawWindow(hwnd, None, None, win32con.RDW_INVALIDATE |
-                              win32con.RDW_INTERNALPAINT)
-        win32gui.InvalidateRect(hwnd, self._onscreen_display, True)
+        if self._display_string:
+            # redraw the window to erase onscreen display
+            win32gui.RedrawWindow(hwnd, None, None, win32con.RDW_INVALIDATE |
+                                win32con.RDW_INTERNALPAINT)
+            win32gui.InvalidateRect(hwnd, self._onscreen_display, True)
+        if self._show_help:
+            self._show_help = False
+            # show help dialog box
+            win32gui.MessageBox(None,
+                                "Up Arrow: increase parameter value\n" +
+                                "Down Arrow: decrease parameter value\n" +
+                                "Right Arrow: next parameter\n" +
+                                "Left Arrow: previous parameter\n" +
+                                "Plus: increase parameter increment\n" +
+                                "Minus: decrease parameter increment\n" +
+                                "O: open parameter file\n" +
+                                "S: save parameter file\n" +
+                                "Shift: show current parameter value\n" +
+                                "Control: show current parameter increment\n",
+                                "Help", win32con.MB_ICONINFORMATION |
+                                win32con.MB_OK)
 
 
 
