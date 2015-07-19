@@ -29,10 +29,10 @@ from random import randint
 from PIL import Image
 from scipy.optimize import fmin_powell
 # imports for PyInstaller
-import scipy.linalg.cython_blas
-import scipy.linalg.cython_lapack
-import scipy.special._ufuncs_cxx
-import scipy.integrate
+#import scipy.linalg.cython_blas
+#import scipy.linalg.cython_lapack
+#import scipy.special._ufuncs_cxx
+#import scipy.integrate
 
 class DomeProjection:
     """
@@ -1022,69 +1022,5 @@ def flat_display_direction(row, column, screen_height, screen_width,
     r = sqrt(x**2 + y**2 + z**2)
 
     return array([x/r, y/r, z/r])
-
-
-def calc_projector_images(y, z, theta, vertical_offset):
-    """
-    Calculate the two projector_image parameters that the dome class requires
-    from a smaller set of parameters that are more parameter estimation
-    friendly. The location of the projector's focal point is given by y and z.
-    Theta is half the angle between lines from the focal point to the left and
-    right sides of the image.  The lens offset of the projector is described by
-    vertical_offset.
-    """
-    # distance to first image, chosen to match measurements
-    y1 = 0.436
-    # calculate x from theta and the distance between the focal point and image
-    x1 = (y - y1) * tan(theta)
-    # calculate z by assuming a 16:9 aspect ratio 
-    z1_low = vertical_offset
-    z1_high = z1_low + 2 * 9.0/16.0 * x1
-    image1 = [[ -x1,  y1,  z1_high ],
-              [  x1,  y1,  z1_high ],
-              [  x1,  y1,  z1_low ],
-              [ -x1,  y1,  z1_low ]]
-
-    # do it again for image2
-    y2 = 0.265
-    x2 = (y - y2) * tan(theta)
-    slope = (vertical_offset - z) / (y - y1)
-    z2_low = z + slope * (y - y2)
-    z2_high = z2_low + 2 * 9.0/16.0 * x2
-    image2 = [[ -x2,  y2,  z2_high ],
-              [  x2,  y2,  z2_high ],
-              [  x2,  y2,  z2_low ],
-              [ -x2,  y2,  z2_low ]]
-    
-    return [image1, image2]
-
-
-def calc_frustum_parameters(image1, image2):
-    """
-    Inverse of calc_projector_images.
-    This funciton calculates the y and z coordinates of the projector's focal
-    point along with it's horizontal field of view, and it's vertical throw.
-    This is done to reduce the degrees of freedom to the minimum necessary for
-    parameter estimation using SciPy's minimization routine.
-    """
-    # this one is easy
-    vertical_offset = image1[2][2]
-
-    # calculate theta
-    x1 = image1[1][0]
-    x2 = image2[1][0]
-    y1 = image1[1][1]
-    y2 = image2[1][1]
-    theta = arctan((x2 - x1) / (y1 - y2))
-
-    # calculate y
-    y = y1 + x1 / tan(theta)
-
-    # calculate z
-    z2_low = image2[2][2]
-    slope = (vertical_offset - z2_low) / (y1 - y2)
-    z = vertical_offset + slope * (y - y1)
-    
-    return [y, z, theta, vertical_offset]
 
 

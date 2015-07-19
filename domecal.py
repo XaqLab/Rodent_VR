@@ -5,7 +5,7 @@ import win32con
 
 # import dome projection stuff
 from dome_projection import DomeProjection
-from dome_projection import calc_projector_images
+from dome_calibration import calc_projector_images
 
 NUM_PARAMETERS = 10
 PROJECTOR_PIXEL_WIDTH = 1280
