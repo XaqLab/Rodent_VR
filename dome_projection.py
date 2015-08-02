@@ -28,11 +28,6 @@ from numpy import uint8
 from random import randint
 from PIL import Image
 from scipy.optimize import fmin_powell
-# imports for PyInstaller
-#import scipy.linalg.cython_blas
-#import scipy.linalg.cython_lapack
-#import scipy.special._ufuncs_cxx
-#import scipy.integrate
 
 class DomeProjection:
     """
@@ -452,7 +447,7 @@ class DomeProjection:
         point on the mirror (calculated as mirror_radius_vector - dome_center)
         and the length of the vector with unknown direction is the dome radius.
         """
-        # solve quadratic for y-component of reflected light vectors
+        # solve quadratic for the length of the reflected light vector
         rpx = mirror_radius_vector[0] - self._dome_center[0]
         rpy = mirror_radius_vector[1] - self._dome_center[1]
         rpz = mirror_radius_vector[2] - self._dome_center[2]
@@ -955,7 +950,7 @@ class DomeProjection:
         # the desired and actual directions.
         arguments = tuple([directions])
         results = fmin_powell(self._direction_differences, pixels, args=arguments,
-                          xtol=1, disp=False)
+                              xtol=1, disp=False)
     
         # Sort the final results into pixels
         projector_pixels = []
