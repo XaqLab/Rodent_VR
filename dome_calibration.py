@@ -54,8 +54,6 @@ UPPER_RIGHT_PHOTO = 3  # defined to make the code easier to read
 
 # debug stuff
 DEBUG = True
-previous_actual_directions = None
-previous_estimated_directions = None
 previous_parameters = None
 
 
@@ -197,16 +195,13 @@ def calc_distance_to_dome(parameters, position, direction):
     intersect the dome.  This should be prevented by judicious choice of 
     parameter bounds.
     """
-    if (linalg.norm(direction) - 1.0) > 0.001:
-        print
-        print "size of direction vector:", linalg.norm(direction)
-        print
+    assert (linalg.norm(direction) - 1.0) < 1e-12
     dome_center = parameters['dome_center']
     dome_radius = parameters['dome_radius']
     position_to_dome_center = array(dome_center) - array(position)
     theta = arccos(position_to_dome_center.dot(direction) /
                    linalg.norm(position_to_dome_center))
-    a = 1
+    a = 1.0
     b = -2*linalg.norm(position_to_dome_center)*cos(theta)
     c = linalg.norm(position_to_dome_center)**2 - dome_radius**2
     if b**2 - 4*a*c < 0:
@@ -216,76 +211,70 @@ def calc_distance_to_dome(parameters, position, direction):
     return r
 
 
-def camera_orientation(orientation, lower_left_point, viewing_vector):
+def find_viewing_direction(photo_point, camera_direction, parameters):
     """
-    This system of equations describes the geometry of the camera while taking
-    a calibration photo.  Solving it gives the orientation of the camera.  The
-    camera's axis of rotation for yaw is a vertical axis and the axis of
-    rotation for pitch is a horizontal axis.  The pitch axis rotates with yaw
-    while the yaw axis is unaffected by pitch.  The intersection of the two
-    axes is the viewpoint used to calculate viewing directions.  The viewing
-    direction of the lower left point in each photo is known so the distance
-    from the animal's position to the dome in this direction can be found.  The
-    parameter viewing_vector is the vector from the animal's position to the
-    dome in this viewing direction.
+    Use the camera orientation and the direction to a point in the photo
+    to find the (x, y, z) coordinates of the point on the dome.
+    """
+    animal_position = parameters['animal_position']
+    camera_focal_point = (array(animal_position)
+                          + (camera.axes_to_lens - camera.focal_length)
+                          * camera_direction)
+    [x, y, z] = camera_direction
+    camera_pitch = arcsin(z)
+    camera_yaw = arctan2(x, y)
+    point_pitch = camera_pitch + arctan(photo_point[1] / camera.fpy)
+    point_yaw = camera_yaw + arctan(photo_point[0] / camera.fpx)
+    point_direction = array([sin(point_yaw)*cos(point_pitch),
+                             cos(point_yaw)*cos(point_pitch),
+                             sin(point_pitch)])
+    distance_to_dome = calc_distance_to_dome(parameters,
+                                             camera_focal_point,
+                                             point_direction)
+    vector_to_dome = distance_to_dome * point_direction
+    dome_point = camera_focal_point + vector_to_dome
+    """
+    Find the viewing direction from the animal's (x, y, z) position to the
+    (x, y, z) point on the dome.
+    """
+    viewing_vector = dome_point - animal_position
+    viewing_direction = (viewing_vector / linalg.norm(viewing_vector))
+    return viewing_direction
+
+
+def camera_orientation(orientation, lower_left_point, known_direction,
+                       parameters):
+    """
+    Calculate the pitch and yaw of lower_left_point and compare it to the
+    pitch and yaw of known_direction.  The camera orientation is correct when
+    they are the same.
     """
     camera_pitch, camera_yaw = orientation
-    """ Find the pitch and yaw of viewing_vector. """
-    viewing_distance = linalg.norm(viewing_vector)
-    [x, y, z] = viewing_vector / viewing_distance
+    camera_direction = array([cos(camera_pitch)*sin(camera_yaw),
+                              cos(camera_pitch)*cos(camera_yaw),
+                              sin(camera_pitch)])
+    viewing_direction = find_viewing_direction(lower_left_point,
+                                               camera_direction,
+                                               parameters)
+    [x, y, z] = viewing_direction
     viewing_pitch = arcsin(z)
     viewing_yaw = arctan2(x, y)
+    """ Find the pitch and yaw of known_direction. """
+    [x, y, z] = known_direction
+    known_pitch = arcsin(z)
+    known_yaw = arctan2(x, y)
     """
-    Calculate the pitch and yaw of the lower left point relative to the
-    camera's pitch and yaw and use them to find the angle between the vector
-    from the camera's focal point to lower_left_point and the vector from the
-    camera's focal point to the intersection of the pitch and yaw axes.
+    viewing_pitch and known_pitch should be equal as should viewing_yaw
+    and known_yaw
     """
-    relative_pitch = arctan(lower_left_point[1] / camera.fpy)
-    relative_yaw = arctan(lower_left_point[0] / camera.fpx)
-    relative_direction = array([cos(relative_pitch)*sin(relative_yaw),
-                                cos(relative_pitch)*cos(relative_yaw),
-                                sin(relative_pitch)])
-    angle = arccos(relative_direction.dot(array([0, -1, 0])))
-    """
-    Find the distance from the camera's focal point to lower_left_point using
-    the law of cosines.
-    """
-    a = 1
-    b = -2*(camera.axes_to_lens - camera.focal_length)*cos(angle)
-    c = (camera.axes_to_lens - camera.focal_length)**2 - viewing_distance**2
-    d = sqrt(b**2 - 4*a*c)
-    distance = max([(-b + d) / (2*a), (-b - d) / (2*a)])
-    """ Find the pitch and yaw of the sum of the vector from the intersection
-    of the pitch and yaw axes to the camera's focal point and the vector from
-    the camera's focal point to lower_left_point. """
-    direction1 = array([cos(camera_pitch)*sin(camera_yaw),
-                        cos(camera_pitch)*cos(camera_yaw),
-                        sin(camera_pitch)])
-    length1 = (camera.axes_to_lens - camera.focal_length)
-    pitch = camera_pitch + relative_pitch
-    yaw = camera_yaw + relative_yaw
-    direction2 = array([cos(pitch)*sin(yaw),
-                        cos(pitch)*cos(yaw),
-                        sin(pitch)])
-    length2 = distance
-    vector_sum = length1*direction1 + length2*direction2
-    [x, y, z] = vector_sum / linalg.norm(vector_sum)
-    vector_sum_pitch = arcsin(z)
-    vector_sum_yaw = arctan2(x, y)
-    """
-    viewing_pitch and vector_sum_pitch should be equal as should viewing_yaw
-    and vector_sum_yaw
-    """
-    f1 = viewing_pitch - vector_sum_pitch
-    f2 = viewing_yaw - vector_sum_yaw
-    #print 180/pi*camera_pitch, 180/pi*camera_yaw, f1, f2
+    f1 = viewing_pitch - known_pitch
+    f2 = viewing_yaw - known_yaw
     return (f1, f2)
     
 
 def calc_viewing_directions(photo_points, parameters):
     """
-    Calculate the viewing directions for the light colored objects in the
+    Calculate the viewing directions to the light colored objects in the
     calibration photos.  
     """
     [upper_left, upper_right, lower_left, lower_right] = photo_points
@@ -295,76 +284,33 @@ def calc_viewing_directions(photo_points, parameters):
     photo is at 0 pitch, 0 yaw.
     """
     photos = [lower_left, lower_right, upper_left, upper_right]
-    known_directions = [[0, 1, 0]] * 4
-    viewing_directions = [[0, 1, 0]] * 9
+    known_directions = [[0.0, 1.0, 0.0]] * 4
+    viewing_directions = [[0.0, 1.0, 0.0]] * 9
     animal_position = parameters['animal_position']
     for photo in range(len(photos)):
         for point in photos[photo]:
             if point[0] < 0 and point[1] < 0:
                 lower_left_point = point
-        print "photo:", photo
         """
-        Solve the 2 by 2 system of nonlinear equations that describe the
-        geometry of the system to find the pitch and yaw of the camera.
-        This geometry depends on the vector from the animal to the dome in
-        the direction towards the lower left point in the photo.
+        Find the camera orientation for this photo.
         """
-        distance_to_dome = calc_distance_to_dome(parameters, animal_position,
-                                                 known_directions[photo])
-        viewing_vector = distance_to_dome * array(known_directions[photo])
-        #print "Animal position:", animal_position
-        #print "Aminal pos + vector:", animal_position + viewing_vector
-        args = (lower_left_point, viewing_vector)
         [x, y, z] = known_directions[photo]
         known_direction_pitch = arcsin(z)
         known_direction_yaw = arctan2(x, y)
         x0 = (known_direction_pitch, known_direction_yaw)
+        args = (lower_left_point, known_directions[photo], parameters)
         camera_pitch, camera_yaw = fsolve(camera_orientation, x0, args)
-        print "Camera pitch and yaw: [%f, %f]" % (180/pi*camera_pitch,
-                                                  180/pi*camera_yaw)
-        """
-        Use the camera's orientation and focal length to find the (x, y, z)
-        coordinates of the camera's focal point.
-        """
         camera_direction = array([cos(camera_pitch)*sin(camera_yaw),
                                   cos(camera_pitch)*cos(camera_yaw),
                                   sin(camera_pitch)])
-        camera_focal_point = (array(animal_position)
-                              + (camera.axes_to_lens - camera.focal_length)
-                              * camera_direction)
-        print "Camera focal point:", camera_focal_point
-        #print "Focal pt to dome:",
-        #print animal_position + viewing_vector - camera_focal_point
         for i, point in enumerate(photos[photo]):
-            print
-            """
-            Use the location of the camera's focal point and the directions to
-            the objects in the photo to find the (x, y, z) coordinates of the
-            object's center points on the dome.
-            """
-            point_pitch = camera_pitch + arctan(point[1] / camera.fpy)
-            point_yaw = camera_yaw + arctan(point[0] / camera.fpx)
-            point_direction = array([sin(point_yaw)*cos(point_pitch),
-                                     cos(point_yaw)*cos(point_pitch),
-                                     sin(point_pitch)])
-            distance_to_dome = calc_distance_to_dome(parameters,
-                                                     camera_focal_point,
-                                                     point_direction)
-            vector_to_dome = distance_to_dome * point_direction
-            dome_point = camera_focal_point + vector_to_dome
-            #print "point direction:", point_direction
-            #print "vector to dome:", vector_to_dome
-            print "dome point:", dome_point
             """
             Find viewing directions from the animal's (x, y, z) position to the
             (x, y, z) locations of the object's center points on the dome.
             """
-            viewing_vector = dome_point - animal_position
-            viewing_direction = (viewing_vector / linalg.norm(viewing_vector))
-            [x, y, z] = viewing_direction
-            yaw = 180/pi*arctan2(x, y)
-            pitch = 180/pi*arcsin(z)
-            print "viewing direction pitch and yaw: [%f, %f]" % (pitch, yaw)
+            viewing_direction = find_viewing_direction(point,
+                                                       camera_direction,
+                                                       parameters)
             """
             The lower left photo provides the known directions for the
             other three photos.  The viewing_directions are indexed, 0 through
@@ -399,7 +345,6 @@ def calc_viewing_directions(photo_points, parameters):
                     viewing_directions[7] = viewing_direction
                 elif photo == UPPER_RIGHT_PHOTO:
                     viewing_directions[8] = viewing_direction
-    import pdb; pdb.set_trace()
     return viewing_directions
 
 
@@ -469,8 +414,6 @@ def calc_frustum_parameters(image1, image2):
 
 def dome_distortion(x, projector_pixels, photo_points):
     # debug stuff
-    global previous_actual_directions
-    global previous_estimated_directions
     global previous_parameters
     """
     Calculate the sum of the square differences between the actual and
