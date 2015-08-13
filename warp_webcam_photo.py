@@ -7,6 +7,7 @@ import sys
 import re
 import cPickle
 import webcam
+from numpy import pi
 
 DEBUG = False
 
@@ -22,13 +23,15 @@ else:
 directory = filepath.replace(filename,"")
 input_image = Image.open(directory + filename)
 
+half_theta_yaw = webcam.theta * 180/pi
+
 # screen height and width were calculated based on measurements from webcam photos
 # these numbers are in inches
 parameters = dict(screen_height = [webcam.screen_height],
                   screen_width = [webcam.screen_width],
                   distance_to_screen = [webcam.distance_to_screen],
                   pitch = [0],
-                  yaw = [0],
+                  yaw = [half_theta_yaw],
                   roll = [0],
                   image_pixel_width = [1280],
                   image_pixel_height = [720],
