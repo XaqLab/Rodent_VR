@@ -1,188 +1,176 @@
-#!/usr/python
-
 """
-Estimate a camera's radial distortion parameters.  
-
-The calibration image is produced when this script is run with no arguments.
-Photograph this image with the camera and pass the filename of the photograph
-to this script to estimate the camera's distortion parameters.
+This is the script I wrote to characterize the camera used to estimate the dome
+projection geometry.  I displayed a black and white checkerboard pattern
+16 squares wide and 9 squares high, matching the TV's 16:9 aspect ratio.
+I took 10 pictures of this pattern with the camera, moving the camera between
+pictures.
 """
-
-import sys
+from numpy import array, zeros, float32, mgrid, pi, arctan
+from numpy.linalg import norm
+import cv2  # open computer vision library
+import glob
 from PIL import Image
-from numpy import array, ones, uint8, dot, sin, cos, argwhere, delete
-from scipy.optimize import minimize
-from scipy import ndimage
-import logitech_c525 as webcam
-from dome_calibration import find_center_points, sort_points, remove_distortion
 
 
-DEBUG = True
+BOARD_SIZE = (15, 8)  # (x, y)
+DEBUG = False
 
-# define constants
-CAMERA_PIXEL_WIDTH = 1280
-CAMERA_PIXEL_HEIGHT = 720
-BACKGROUND_PIXEL_VALUE = 0
-OBJECT_PIXEL_VALUE = 192  # < 255 to prevent saturating the camera
+# termination criteria
+criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.0001)
 
+"""
+Prepare points for the checker board's "inside" corners.  The checker board has
+9 rows and 16 columns, this results in 15 "inside" corners per row and 8 per
+column.  The measured viewing area on the TV I used for calibration was 882 mm
+wide by 488 mm high.  
+"""
+dx = 882.0/16
+dy = 488.0/9
+checker_board = array([[x*dx, y*dy, 0]
+                       for y in range(BOARD_SIZE[1] - 1, -1, -1)
+                       for x in range(BOARD_SIZE[0])], float32)
 
-def create_diamond_image(center_pixels, diamond_size,
-                         image_width=CAMERA_PIXEL_WIDTH,
-                         image_height=CAMERA_PIXEL_HEIGHT):
-    """
-    Make an image with diamonds centered on center_pixels.  The height and
-    width of the diamonds is specified by diamond_size.
-    """
+# Arrays to store object points and image points from all the images.
+object_points = [] # 3d points in real world space
+image_points = []  # 2d points in image plane.
 
-    # make a dark background
-    pixels = ones([image_height, image_width], dtype=uint8)
-    pixels = BACKGROUND_PIXEL_VALUE * pixels
+filenames = glob.glob('*.jpg')
 
-    half_size = (diamond_size - 1)/2
+camera_resolution = None
 
-    # add the diamonds
-    for center_pixel in center_pixels:
-        center_row = center_pixel[0]
-        center_col = center_pixel[1]
-        diamond_pixels = []
-        for row in range(center_row - half_size,
-                         center_row + half_size + 1):
-            for col in range(center_col - half_size + abs(row - center_row),
-                             center_col + half_size + 1 - abs(row - center_row)):
-                pixels[row][col] = OBJECT_PIXEL_VALUE
+for filename in filenames:
+    image = cv2.imread(filename)
+    gray_scale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Invert the gray scale image because findChessboardCorners requires a
+    # white background.
+    inverted_image = 255 - gray_scale_image
+    if camera_resolution:
+        assert inverted_image.shape[::-1] == camera_resolution
+    else:
+        camera_resolution = inverted_image.shape[::-1]
 
-    return Image.fromarray(pixels, mode='L')
+    # Find the chess board corners
+    found, corners = cv2.findChessboardCorners(inverted_image,
+                                               BOARD_SIZE, None)
 
+    # If found, add object points, image points
+    if found == True:
+        object_points.append(checker_board)
+        image_points.append(corners)
 
-def camera_distortion(x, image_centers, photo_centers):
-    """
-    Calculate the sum of the squared error between the pixels in the camera
-    calibration image and the pixels in the distortion-corrected photo of the
-    camera calibration image.
-    """
-    # sort x into meaninful names
-    scaling_factor = x[0]
-    rotation_angle = x[1]
-    translation_x = x[2]
-    translation_y = x[3]
-    distortion_coefficients = x[4:]
+        # Draw and display the corners
+        if DEBUG:
+            cv2.drawChessboardCorners(image, BOARD_SIZE, corners, found)
+            cv2.imshow('Corners', image)
+            cv2.waitKey(500)
 
-    # Rotate, translate and scale the image to remove the effects of
-    # these nuisance variables.
-    A = array([[ cos(rotation_angle), -sin(rotation_angle)],
-               [ sin(rotation_angle),  cos(rotation_angle)]])
-    A = scaling_factor * A
-    B = array([translation_x, translation_y])
-    centers = [list(A.dot(center) + B) for center in photo_centers]
-
-    # remove radial distortion from the camera calibration photo pixels
-    centers = remove_distortion(centers, distortion_coefficients)
-    x_photo = array([centers[i][0] for i in range(len(centers))])
-    y_photo = array([centers[i][1] for i in range(len(centers))])
-
-    # calculate the sum of the square differences between the image pixel
-    # values and the pixel values from the photo
-    x_image = array([image_centers[i][0] for i in range(len(image_centers))])
-    y_image = array([image_centers[i][1] for i in range(len(image_centers))])
-
-    # for each image point, find the closest photo point to calculate errors
-    sum_of_square_errors = 0
-    for image_center in image_centers:
-        # find minimum error (i.e. closest photo point)
-        errors = ((x_photo - image_center[0])**2
-                    + (y_photo - image_center[1])**2)
-        min_error = min(errors)
-        # add minimum error to the running total
-        sum_of_square_errors = sum_of_square_errors + min_error
-        # remove that photo point
-        index = argwhere(errors == min_error)
-        delete(x_photo, index)
-        delete(y_photo, index)
-    
-    return sum_of_square_errors
-
-    # this assumes that the points have been sorted so they are in the same
-    # order in both the image and the photo
-    #value = sum((x_photo - x_image)**2 + (y_photo - y_image)**2)
-
-    #return value
+if DEBUG:
+    cv2.destroyAllWindows()
 
 
-###############################################################################
-# Main program starts here
-###############################################################################
-if __name__ == "__main__":
-    """
-    Define camera_pixels which will be used to generate the camera calibration
-    image so we can compensate for the distortion introduced by the camera we
-    use for calibration.  The pixels must be listed from left to right and
-    then top to bottom so they can be matched with the correct pixel in the
-    photo.
-    """
-    diamond_size = 13 # vertical and horizontal size of the diamonds in pixels
-    n = 11.0 # affects row spacing
-    m = 15.0 # affects column spacing
-    num_rows = webcam.pixel_height
-    row_nums = ([num_rows*(0.5 - i/n) - 1 for i in range(int(n/2), 0, -1)] +
-                [num_rows*(0.5 + i/n) for i in range(1, int(n/2) + 1)])
-    num_cols = webcam.pixel_width
-    col_nums = ([num_cols*(0.5 - i/m) - 1 for i in range(int(m/2), 0, -1)] +
-                [num_cols*(0.5 + i/m) for i in range(1, int(m/2) + 1)])
-    camera_pixels = [[int(row_nums[j]), int(col_nums[i])]
-                     for j in range(len(row_nums))
-                     for i in range(len(col_nums))]
+# find the camera parameters using the object points and image points
+outputs = cv2.calibrateCamera(object_points, image_points,
+                              camera_resolution, criteria=criteria)
+(reprojection_error, camera_matrix, distortion_coefficients, rotation_vectors,
+ translation_vectors) = outputs
+#camera_matrix = array(camera_matrix, dtype=float32)
 
-    if len(sys.argv) == 1:
-        """
-        No arguments were given so generate the calibration image and save
-        it to a file.  The calibration image is photographed with the camera
-        to enable compensation for its barrel distortion.  
-        """
-        camera_image = \
-                create_diamond_image(camera_pixels, diamond_size)
-        camera_image.save("camera_calibration_image.png")
+# Get new_camera_matrix which is needed by undistortPoints
+outputs = cv2.getOptimalNewCameraMatrix(camera_matrix, distortion_coefficients,
+                                        camera_resolution, 1,
+                                        camera_resolution)
+(new_camera_matrix, region_of_interest) = outputs
 
-    elif len(sys.argv) == 2:
-        """
-        An argument was given so estimate the camera's radial distortion
-        parameters.  Treat the argument as the file name of the photograph of
-        the calibration image taken with the camera.
-        """
-        photo_filename = sys.argv[1]
 
-        """
-        Find the center pixels of the objects in the camera calibration photo
-        and estimate the camera's radial distortion coefficients by minimizing
-        the difference between these pixels and camera_pixels.
-        """
-        photo = Image.open(photo_filename).convert('L')
-        photo_centers = find_center_points(photo)
-        # sort the center points from left to right and top to bottom
-        #photo_centers = sort_points(photo_centers, 10, 14)
-        photo.close()
+#distortion_coefficients = [distortion_coefficients[0][0],
+                           #distortion_coefficients[0][1],
+                           #distortion_coefficients[0][4]]
 
-        # convert camera image pixels (row, column) to (x, y) coordinates
-        image_centers = [[  pixel[1] - CAMERA_PIXEL_WIDTH/2 + 0.5,
-                          -(pixel[0] - CAMERA_PIXEL_HEIGHT/2 + 0.5)]
-                         for pixel in camera_pixels]
+#undist_points = remove_distortion(corner_points, distortion_coefficients)
+#dog = array(corner_points, float32)
+#corner_matrix = cv.fromarray(dog)
+#corner_matrix = cv.fromarray(array(corner_points, float32))
+#undist_matrix = cv.CreateMat(corner_points.shape[0],
+#                             corner_points.shape[1], cv.CV_32FC1)
+#cv2.undistortPoints(corner_matrix, undist_matrix, camera_matrix,
+#                   distortion_coefficients, R=None, P=None)
 
-        x0 = array([1] + [1e-19]*3 + [-1e-18]*3)
-        arguments = (image_centers, photo_centers)
-        results = minimize(camera_distortion, x0, args=arguments,
-                           method='Nelder-Mead')
-                           #method='L-BFGS-B')
-        distortion_coefficients = results['x'][4:]
-        print results
-        photo_centers = remove_distortion(photo_centers,
-                                          distortion_coefficients)
-        # Convert (x, y) center points to (row, column) center pixels
-        photo_pixels = [[-center_point[1] + CAMERA_PIXEL_HEIGHT/2 - 0.5,
-                         center_point[0] + CAMERA_PIXEL_WIDTH/2 - 0.5]
-                        for center_point in photo_centers]
-        photo_pixels = [[int(round(pixel[0])), int(round(pixel[1]))]
-                        for pixel in photo_pixels]
-        undistorted_image = \
-                create_diamond_image(photo_pixels, diamond_size)
-        undistorted_image.show()
+# convert the points to the format that OpenCV wants
+#corner_points = array([[[c[0], c[1]]] for c in corner_points])
+#undist_points = cv2.undistortPoints(corner_points, camera_matrix,
+#                                    distortion_coefficients, R=None, P=None)
 
+undist_corners = cv2.undistortPoints(saved_corners, camera_matrix,
+                                     distortion_coefficients, R=None,
+                                     P=new_camera_matrix)
+#undist_points = asarray(undist_matrix[:,:])
+#undist_pixels = points_to_pixels(undist_points, *camera_resolution)
+#undist_corners = array([[[p[1], p[0]]] for p in undist_pixels], float32)
+cv2.drawChessboardCorners(saved_image, BOARD_SIZE, undist_corners, True)
+cv2.imshow('Undistorted Corners', saved_image)
+import pdb; pdb.set_trace()
+
+print "Reprojection error"
+print reprojection_error
+print
+print "Distortion coefficients"
+print distortion_coefficients
+print
+print "Camera matrix"
+print camera_matrix
+
+# fovx, fovy, focalLength, principalPoint, aspectRatio
+aperture_width = 0
+aperture_height = 0
+print cv2.calibrationMatrixValues(camera_matrix, camera_resolution,
+                                  aperture_width, aperture_height)
+
+
+# x and y focal lengths in pixels
+fpx = camera_matrix[0, 0]
+fpy = camera_matrix[1, 1]
+
+# x and y coordinates of the principal point in the image plane
+ppx = camera_matrix[0, 2]
+ppy = camera_matrix[1, 2]
+
+# x and y fields of view
+left_field_of_view = 180/pi*arctan((0 - ppx)/fpx)
+right_field_of_view = 180/pi*arctan((camera_resolution[0] - ppx)/fpx)
+upper_field_of_view = -180/pi*arctan((0 - ppy)/fpy)
+lower_field_of_view = -180/pi*arctan((camera_resolution[1] - ppy)/fpy)
+
+print
+print "Fields of view"
+print "left:", left_field_of_view
+print "right:", right_field_of_view
+print "horizontal:", right_field_of_view - left_field_of_view
+print "upper:", upper_field_of_view
+print "lower:", lower_field_of_view
+print "vertical:", upper_field_of_view - lower_field_of_view
+
+#for i in range(len(filenames)):
+#    print
+#    print filenames[i]
+#    print "Rotation:"
+#    print rotation_vectors[i]
+#    print 180/pi*norm(rotation_vectors[i])
+#    print "Translation:"
+#    print translation_vectors[i]
+
+print "# Camera properties"
+print "pixel_width = %d" % camera_resolution[0]
+print "pixel_height = %d" % camera_resolution[1]
+print "fpx = %f" % fpx
+print "fpy = %f" % fpy
+print "ppx = %f" % ppx
+print "ppy = %f" % ppy
+print "ppx = %f" % (ppx / camera_resolution[0])
+print "ppy = %f" % (ppy / camera_resolution[1])
+print "distortion_coefficients =", distortion_coefficients
+print "matrix = \\"
+cm_string = ("    [[ %8.3f, %8.3f, %8.3f ],\n" +
+             "     [ %8.3f, %8.3f, %8.3f ],\n" +
+             "     [ %8.3f, %8.3f, %8.3f ]]\n")
+print cm_string % tuple(f for row in camera_matrix for f in row)
 
