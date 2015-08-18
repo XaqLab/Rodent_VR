@@ -30,14 +30,15 @@ right.
 import sys
 from PIL import Image
 from numpy import pi, sin, cos, tan, arcsin, arccos, arctan, arctan2
-from numpy import array, uint8, dot, linalg, sqrt
+from numpy import array, uint8, dot, linalg, sqrt, float32
 from scipy.optimize import minimize, fsolve
 from scipy import ndimage
+import cv2
 
 # import stuff for our projector setup and web camera
 from dome_projection import DomeProjection
 from dome_projection import flat_display_direction
-import foscam_FI9821W as camera
+import foscam_FI9821P as camera
 
 # define constants
 MAX_FLOAT = sys.float_info.max
@@ -149,7 +150,6 @@ def find_center_points(image, blur=2):
     distinguished from the background by using a threshold pixel value.
     """
     #image.show()
-    [image_width, image_height] = image.size
     pixels = array(image)
     
     # define the pixel threshold used to distinguish objects from the background
@@ -174,13 +174,15 @@ def find_center_points(image, blur=2):
             object_pixels[int(round(pixel[0])), int(round(pixel[1]))] = 0
         Image.fromarray(255*object_pixels).show()
     
-    # Convert center pixels to center points.
-    center_points = pixels_to_points(center_pixels, CAMERA_PIXEL_WIDTH,
-                                     CAMERA_PIXEL_HEIGHT)
-
-    # Remove the camera's radial distortion
-    center_points = remove_distortion(center_points,
-                                      camera.distortion_coefficients)
+    # Convert center_pixels to the format that Open CV requires
+    opencv_pixels = array([[[p[0], p[1]]] for p in center_pixels],
+                          dtype=float32)
+    undist_pixels = cv2.undistortPoints(opencv_pixels, camera.matrix,
+                                        camera.distortion_coefficients,
+                                        R=None, P=camera.matrix)
+    # Convert undist_pixels back to a simple array of pixels
+    center_points = array([[p[0, 1] - camera.ppx, p[0, 0] - camera.ppy]
+                           for p in undist_pixels])
 
     return center_points
 

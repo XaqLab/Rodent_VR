@@ -27,7 +27,7 @@ wide by 488 mm high.
 dx = 882.0/16
 dy = 488.0/9
 checker_board = array([[x*dx, y*dy, 0]
-                       for y in range(BOARD_SIZE[1] - 1, -1, -1)
+                       for y in range(BOARD_SIZE[1])
                        for x in range(BOARD_SIZE[0])], float32)
 
 # Arrays to store object points and image points from all the images.
@@ -73,58 +73,21 @@ outputs = cv2.calibrateCamera(object_points, image_points,
                               camera_resolution, criteria=criteria)
 (reprojection_error, camera_matrix, distortion_coefficients, rotation_vectors,
  translation_vectors) = outputs
-#camera_matrix = array(camera_matrix, dtype=float32)
 
-# Get new_camera_matrix which is needed by undistortPoints
-outputs = cv2.getOptimalNewCameraMatrix(camera_matrix, distortion_coefficients,
-                                        camera_resolution, 1,
-                                        camera_resolution)
-(new_camera_matrix, region_of_interest) = outputs
-
-
-#distortion_coefficients = [distortion_coefficients[0][0],
-                           #distortion_coefficients[0][1],
-                           #distortion_coefficients[0][4]]
-
-#undist_points = remove_distortion(corner_points, distortion_coefficients)
-#dog = array(corner_points, float32)
-#corner_matrix = cv.fromarray(dog)
-#corner_matrix = cv.fromarray(array(corner_points, float32))
-#undist_matrix = cv.CreateMat(corner_points.shape[0],
-#                             corner_points.shape[1], cv.CV_32FC1)
-#cv2.undistortPoints(corner_matrix, undist_matrix, camera_matrix,
-#                   distortion_coefficients, R=None, P=None)
-
-# convert the points to the format that OpenCV wants
-#corner_points = array([[[c[0], c[1]]] for c in corner_points])
-#undist_points = cv2.undistortPoints(corner_points, camera_matrix,
-#                                    distortion_coefficients, R=None, P=None)
-
-undist_corners = cv2.undistortPoints(saved_corners, camera_matrix,
-                                     distortion_coefficients, R=None,
-                                     P=new_camera_matrix)
-#undist_points = asarray(undist_matrix[:,:])
-#undist_pixels = points_to_pixels(undist_points, *camera_resolution)
-#undist_corners = array([[[p[1], p[0]]] for p in undist_pixels], float32)
-cv2.drawChessboardCorners(saved_image, BOARD_SIZE, undist_corners, True)
-cv2.imshow('Undistorted Corners', saved_image)
-import pdb; pdb.set_trace()
-
-print "Reprojection error"
-print reprojection_error
-print
-print "Distortion coefficients"
-print distortion_coefficients
-print
-print "Camera matrix"
-print camera_matrix
-
-# fovx, fovy, focalLength, principalPoint, aspectRatio
-aperture_width = 0
-aperture_height = 0
-print cv2.calibrationMatrixValues(camera_matrix, camera_resolution,
-                                  aperture_width, aperture_height)
-
+if DEBUG:
+    filename = filenames[1]
+    dist_image = cv2.imread(filename)
+    corners = image_points[1]
+    cv2.drawChessboardCorners(dist_image, BOARD_SIZE, corners, True)
+    cv2.imwrite("junk/dist_image.jpg", dist_image)
+    dist_image = cv2.imread(filename)
+    undist_image = cv2.undistort(dist_image, camera_matrix,
+                                distortion_coefficients)
+    undist_corners = cv2.undistortPoints(corners, camera_matrix,
+                                        distortion_coefficients, R=None,
+                                        P=camera_matrix)
+    cv2.drawChessboardCorners(undist_image, BOARD_SIZE, undist_corners, True)
+    cv2.imwrite("junk/undist_image.jpg", undist_image)
 
 # x and y focal lengths in pixels
 fpx = camera_matrix[0, 0]
@@ -140,37 +103,70 @@ right_field_of_view = 180/pi*arctan((camera_resolution[0] - ppx)/fpx)
 upper_field_of_view = -180/pi*arctan((0 - ppy)/fpy)
 lower_field_of_view = -180/pi*arctan((camera_resolution[1] - ppy)/fpy)
 
+if DEBUG:
+    print "Reprojection error"
+    print reprojection_error
+    print
+    print "Distortion coefficients"
+    print distortion_coefficients
+    print
+    print "Camera matrix"
+    print camera_matrix
+    print
+    # fovx, fovy, focalLength, principalPoint, aspectRatio
+    aperture_width = 0
+    aperture_height = 0
+    print "Calibration matrix values output"
+    print cv2.calibrationMatrixValues(camera_matrix, camera_resolution,
+                                  aperture_width, aperture_height)
+    print
+    print "Fields of view"
+    print "left:", left_field_of_view
+    print "right:", right_field_of_view
+    print "horizontal:", right_field_of_view - left_field_of_view
+    print "upper:", upper_field_of_view
+    print "lower:", lower_field_of_view
+    print "vertical:", upper_field_of_view - lower_field_of_view
+    print
+
+    print len(filenames)
+    print len(rotation_vectors)
+    print len(translation_vectors)
+    for i in range(len(filenames)):
+        print
+        print filenames[i]
+        print "Rotation:"
+        print rotation_vectors[i]
+        print 180/pi*norm(rotation_vectors[i])
+        print "Translation:"
+        print translation_vectors[i]
+
+print "# Import statements"
+print "from numpy import array, float32"
 print
-print "Fields of view"
-print "left:", left_field_of_view
-print "right:", right_field_of_view
-print "horizontal:", right_field_of_view - left_field_of_view
-print "upper:", upper_field_of_view
-print "lower:", lower_field_of_view
-print "vertical:", upper_field_of_view - lower_field_of_view
-
-#for i in range(len(filenames)):
-#    print
-#    print filenames[i]
-#    print "Rotation:"
-#    print rotation_vectors[i]
-#    print 180/pi*norm(rotation_vectors[i])
-#    print "Translation:"
-#    print translation_vectors[i]
-
-print "# Camera properties"
+print "# Camera properties found using OpenCV"
 print "pixel_width = %d" % camera_resolution[0]
 print "pixel_height = %d" % camera_resolution[1]
 print "fpx = %f" % fpx
 print "fpy = %f" % fpy
 print "ppx = %f" % ppx
 print "ppy = %f" % ppy
-print "ppx = %f" % (ppx / camera_resolution[0])
-print "ppy = %f" % (ppy / camera_resolution[1])
-print "distortion_coefficients =", distortion_coefficients
-print "matrix = \\"
-cm_string = ("    [[ %8.3f, %8.3f, %8.3f ],\n" +
-             "     [ %8.3f, %8.3f, %8.3f ],\n" +
-             "     [ %8.3f, %8.3f, %8.3f ]]\n")
+dc_string = ("distortion_coefficients = array([[ %8f, %8f, " +
+             "%8f, %8f, %8f ]])\n")
+print dc_string % tuple(c for c in distortion_coefficients[0])
+cm_string = ("matrix = array([[ %8.3f, %8.3f, %8.3f ],\n" +
+             "                [ %8.3f, %8.3f, %8.3f ],\n" +
+             "                [ %8.3f, %8.3f, %8.3f ]], dtype=float32)\n")
 print cm_string % tuple(f for row in camera_matrix for f in row)
+
+print "# Camera properties found NOT using OpenCV"
+print
+print "# This is the distance, in meters, from the intersection of the"
+print "# pitch and yaw rotation axes to the center of the lens.  This value"
+print "# was measured crudely with a tape measure."
+print "axes_to_lens = 0.035"
+print
+print "# This is the focal distance, in meters, of the camera's lens.  I just"
+print "# guessed a value."
+print "focal_length = 0.001"
 
