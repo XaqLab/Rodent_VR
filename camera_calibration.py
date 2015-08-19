@@ -19,8 +19,8 @@ DEBUG = False
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.0001)
 
 """
-Prepare points for the checker board's "inside" corners.  The checker board has
-9 rows and 16 columns, this results in 15 "inside" corners per row and 8 per
+Prepare points for the checker board's "internal" corners.  The checker board has
+9 rows and 16 columns, this results in 15 "internal" corners per row and 8 per
 column.  The measured viewing area on the TV I used for calibration was 882 mm
 wide by 488 mm high.  
 """
@@ -30,14 +30,16 @@ checker_board = array([[x*dx, y*dy, 0]
                        for y in range(BOARD_SIZE[1])
                        for x in range(BOARD_SIZE[0])], float32)
 
-# Arrays to store object points and image points from all the images.
+"""
+Use all files in the moving_tripod directory with the extension .jpg for
+camera calibration.  In each picture look for a 16 by 9 checker board pattern
+and find the pixel coordinates of its 15 by 8 pattern of "internal" corners. 
+"""
+filenames = glob.glob('calibration/foscam_FI9821P/moving_tripod/*.jpg')
+files_used = []    # files in which the checker board was found
 object_points = [] # 3d points in real world space
 image_points = []  # 2d points in image plane.
-
-filenames = glob.glob('*.jpg')
-
 camera_resolution = None
-
 for filename in filenames:
     image = cv2.imread(filename)
     gray_scale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -55,6 +57,8 @@ for filename in filenames:
 
     # If found, add object points, image points
     if found == True:
+        print "Found checker board in", filename
+        files_used.append(filename)
         object_points.append(checker_board)
         image_points.append(corners)
 
@@ -63,12 +67,16 @@ for filename in filenames:
             cv2.drawChessboardCorners(image, BOARD_SIZE, corners, found)
             cv2.imshow('Corners', image)
             cv2.waitKey(500)
+    else:
+        print "No checker board in", filename
 
 if DEBUG:
     cv2.destroyAllWindows()
 
-
-# find the camera parameters using the object points and image points
+"""
+Use the coordinates of the images "internal" corners found above to find the
+camera's instrinsic parameter matrix and its distortion coefficients.
+"""
 outputs = cv2.calibrateCamera(object_points, image_points,
                               camera_resolution, criteria=criteria)
 (reprojection_error, camera_matrix, distortion_coefficients, rotation_vectors,
@@ -89,20 +97,6 @@ if DEBUG:
     cv2.drawChessboardCorners(undist_image, BOARD_SIZE, undist_corners, True)
     cv2.imwrite("junk/undist_image.jpg", undist_image)
 
-# x and y focal lengths in pixels
-fpx = camera_matrix[0, 0]
-fpy = camera_matrix[1, 1]
-
-# x and y coordinates of the principal point in the image plane
-ppx = camera_matrix[0, 2]
-ppy = camera_matrix[1, 2]
-
-# x and y fields of view
-left_field_of_view = 180/pi*arctan((0 - ppx)/fpx)
-right_field_of_view = 180/pi*arctan((camera_resolution[0] - ppx)/fpx)
-upper_field_of_view = -180/pi*arctan((0 - ppy)/fpy)
-lower_field_of_view = -180/pi*arctan((camera_resolution[1] - ppy)/fpy)
-
 if DEBUG:
     print "Reprojection error"
     print reprojection_error
@@ -113,60 +107,144 @@ if DEBUG:
     print "Camera matrix"
     print camera_matrix
     print
-    # fovx, fovy, focalLength, principalPoint, aspectRatio
     aperture_width = 0
     aperture_height = 0
     print "Calibration matrix values output"
-    print cv2.calibrationMatrixValues(camera_matrix, camera_resolution,
+    returns = cv2.calibrationMatrixValues(camera_matrix, camera_resolution,
                                   aperture_width, aperture_height)
-    print
-    print "Fields of view"
-    print "left:", left_field_of_view
-    print "right:", right_field_of_view
-    print "horizontal:", right_field_of_view - left_field_of_view
-    print "upper:", upper_field_of_view
-    print "lower:", lower_field_of_view
-    print "vertical:", upper_field_of_view - lower_field_of_view
-    print
+    fovx, fovy, focalLength, principalPoint, aspectRatio = returns
+    print "Horizontal field of view:", fovx
+    print "Vertical field of view:", fovy
+    print "Focal length:", focalLength
+    print "Principal point:", principalPoint
+    print "Aspect ratio:", aspectRatio
 
-    print len(filenames)
-    print len(rotation_vectors)
-    print len(translation_vectors)
-    for i in range(len(filenames)):
+    for i in range(len(files_used)):
         print
-        print filenames[i]
+        print files_used[i]
         print "Rotation:"
         print rotation_vectors[i]
         print 180/pi*norm(rotation_vectors[i])
         print "Translation:"
         print translation_vectors[i]
 
+
+"""
+Use all files in the moving_camera_remotely directory with the extension .jpg
+to find a stationary reference point that's location is independent of camera
+orientation.
+"""
+print
+filenames = glob.glob('moving_camera_remotely/*.jpg')
+files_used = []    # files in which the checker board was found
+rotation_vectors = []
+translation_vectors = []
+for filename in filenames:
+    image = cv2.imread(filename)
+    gray_scale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Invert the gray scale image because findChessboardCorners requires a
+    # white background.
+    inverted_image = 255 - gray_scale_image
+    # Remove radial distortion from the image
+    undist_image = cv2.undistort(inverted_image, camera_matrix,
+                                distortion_coefficients)
+    #undist_image = inverted_image
+
+    # Find the chess board corners
+    found, corners = cv2.findChessboardCorners(undist_image,
+                                               BOARD_SIZE,
+                                               flags=cv2.CALIB_CB_ADAPTIVE_THRESH + 
+                                               cv2.CALIB_CB_NORMALIZE_IMAGE +
+                                               cv2.CALIB_CB_ASYMMETRIC_GRID)
+
+    # If found, add object points, image points
+    if found == True:
+        files_used.append(filename)
+        outputs = cv2.solvePnP(checker_board, corners,
+                               camera_matrix, distortion_coefficients)
+        retval, rotation_vector, translation_vector = outputs
+        rotation_vectors.append(rotation_vector)
+        translation_vectors.append(translation_vector)
+
+        # Draw and display the corners
+        if True:
+            cv2.drawChessboardCorners(image, BOARD_SIZE, corners, found)
+            cv2.imshow('Corners', image)
+            cv2.waitKey(500)
+    else:
+        print "Checker board not found in", filename
+
+if True:
+    cv2.destroyAllWindows()
+
+for i in range(len(files_used)):
+    print
+    print files_used[i]
+    print "Rotation:"
+    print rotation_vectors[i]
+    print 180/pi*norm(rotation_vectors[i])
+    print "Translation:"
+    print translation_vectors[i]
+
+
+"""
+Transform camera_matrix to match the coordinate system used in
+dome_projection.py and dome_calibration.py.  This rotates the camera so it
+points along the y-axis instead of the z-axis.
+"""
+camera_rotation_vector = array([pi/2, 0, 0])
+camera_rotation_matrix = cv2.Rodrigues(camera_rotation_vector)[0]
+rotated_camera_matrix = camera_matrix.dot(camera_rotation_matrix)
+
+"""
+Print the camera's instrinsic parameter matrix and distortion coefficients in
+python format so it can be redirected to a file.
+"""
+print "# Do not edit this file, it is auto-generated using",
+print "camera_calibration.py."
+print
+print "# Reprojection error in pixels, a measure of calibration quality"
+print reprojection_error
+print
 print "# Import statements"
 print "from numpy import array, float32"
 print
-print "# Camera properties found using OpenCV"
+print '"""'
+print "Camera properties from the manufacturer"
+print '"""'
 print "pixel_width = %d" % camera_resolution[0]
 print "pixel_height = %d" % camera_resolution[1]
-print "fpx = %f" % fpx
-print "fpy = %f" % fpy
-print "ppx = %f" % ppx
-print "ppy = %f" % ppy
-dc_string = ("distortion_coefficients = array([[ %8f, %8f, " +
-             "%8f, %8f, %8f ]])\n")
-print dc_string % tuple(c for c in distortion_coefficients[0])
-cm_string = ("matrix = array([[ %8.3f, %8.3f, %8.3f ],\n" +
-             "                [ %8.3f, %8.3f, %8.3f ],\n" +
-             "                [ %8.3f, %8.3f, %8.3f ]], dtype=float32)\n")
-print cm_string % tuple(f for row in camera_matrix for f in row)
-
-print "# Camera properties found NOT using OpenCV"
+print
+print '"""'
+print "Camera properties found using OpenCV"
+print '"""'
+print
+print "# These are the radial and tangential distortion coefficients."
+dc_string = ("distortion_coefficients = array([[ %10f, %10f, " +
+             "%10f, %10f, %10f ]])")
+print dc_string % tuple(f for f in distortion_coefficients[0])
+print
+print "# This matrix contains the intrinsic camera properties."
+cm_string = ("matrix = array([[ %10.3f, %10.3f, %10.3f ],\n" +
+             "                [ %10.3f, %10.3f, %10.3f ],\n" +
+             "                [ %10.3f, %10.3f, %10.3f ]], dtype=float32)")
+print cm_string % tuple(f for row in rotated_camera_matrix for f in row)
+print
+print "# Direction and distance from optical center to a stationary reference"
+print "# point that is independent of camera orientation."
+print
+#rr_string = ("reference_rotation = array([[ %10f, %10f, %10f ]])")
+#print rr_string % tuple(f for f in reference_rotation[0])
+#print
+#rd_string = ("reference_distance = %10f")
+#print rd_string % reference_distance
+print
+print '"""'
+print "Measured camera properties"
+print '"""'
 print
 print "# This is the distance, in meters, from the intersection of the"
 print "# pitch and yaw rotation axes to the center of the lens.  This value"
-print "# was measured crudely with a tape measure."
+print "# was measured with a tape measure."
 print "axes_to_lens = 0.035"
-print
-print "# This is the focal distance, in meters, of the camera's lens.  I just"
-print "# guessed a value."
-print "focal_length = 0.001"
 
