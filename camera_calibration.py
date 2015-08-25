@@ -5,71 +5,20 @@ projection geometry.  I displayed a black and white checkerboard pattern
 I took 10 pictures of this pattern with the camera, moving the camera between
 pictures.
 """
-from numpy import array, zeros, float32, mgrid, pi, cross, identity, arcsin
+from numpy import array, zeros, float32, cross
+from numpy import pi, arcsin
 from numpy.linalg import norm
-from scipy.optimize import minimize, fmin
+from scipy.optimize import minimize
 import cv2  # open computer vision library
 import glob
-from PIL import Image
-import pdb
-
-
-import matplotlib as mpl
 from mpl_toolkits.mplot3d import Axes3D
-from numpy import pi, sin, cos, arange, zeros, array
 import matplotlib.pyplot as plt
-
-
-def plot_points(points):
-    fig = plt.figure()
-    ax = fig.gca(projection='3d')
-    for i in range(len(points)):
-        a = row_vector(points[i])
-        x = array([a[0]])
-        y = array([a[1]])
-        z = array([a[2]])
-        ax.scatter(x, y, z, c='r', marker='o')
-    ax.legend()
-    plt.show()
-
-
-def plot_vectors(starting_points, ending_points):
-    assert len(starting_points) == len(ending_points)
-
-    mpl.rcParams['legend.fontsize'] = 10
-
-    fig = plt.figure()
-    ax = fig.gca(projection='3d')
-    for i in range(len(starting_points)):
-        a = row_vector(starting_points[i])
-        b = row_vector(ending_points[i])
-        x = array([a[0], b[0]])
-        y = array([a[1], b[1]])
-        z = array([a[2], b[2]])
-        ax.plot(x, y, z)
-    ax.legend()
-    plt.show()
-
-
-def plot_vectors_from_center(center_point, ending_points):
-    mpl.rcParams['legend.fontsize'] = 10
-
-    fig = plt.figure()
-    ax = fig.gca(projection='3d')
-    a = row_vector(center_point)
-    for i in range(len(ending_points)):
-        b = row_vector(ending_points[i])
-        x = array([a[0], b[0]])
-        y = array([a[1], b[1]])
-        z = array([a[2], b[2]])
-        ax.plot(x, y, z)
-    ax.legend()
-    plt.show()
 
 
 CAMERA_RESOLUTION = (1280, 720)  # (x, y)
 BOARD_SIZE = (15, 8)  # (x, y)
 DEBUG = False
+
 
 """
 Prepare points for the checker board's "internal" corners.  The checker board has
@@ -82,6 +31,45 @@ dy = 0.488/9
 checker_board = array([[x*dx, y*dy, 0]
                        for y in range(BOARD_SIZE[1])
                        for x in range(BOARD_SIZE[0])], float32)
+
+
+def plot_points(points):
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    for i in range(len(points)):
+        a = row_vector(points[i])
+        x = array([a[0]])
+        y = array([a[1]])
+        z = array([a[2]])
+        ax.scatter(x, y, z, c='r', marker='o')
+    plt.show()
+
+
+def plot_vectors(starting_points, ending_points):
+    assert len(starting_points) == len(ending_points)
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    for i in range(len(starting_points)):
+        a = row_vector(starting_points[i])
+        b = row_vector(ending_points[i])
+        x = array([a[0], b[0]])
+        y = array([a[1], b[1]])
+        z = array([a[2], b[2]])
+        ax.plot(x, y, z)
+    plt.show()
+
+
+def plot_vectors_from_center(center_point, ending_points):
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    a = row_vector(center_point)
+    for i in range(len(ending_points)):
+        b = row_vector(ending_points[i])
+        x = array([a[0], b[0]])
+        y = array([a[1], b[1]])
+        z = array([a[2], b[2]])
+        ax.plot(x, y, z)
+    plt.show()
 
 
 def column_vector(vector):
@@ -310,12 +298,11 @@ def point_to_positions_stddev(point, camera_positions):
     return point_to_positions(point, camera_positions).std()
     
 
-def fixed_point_distances(offset, fixed_point, camera_positions,
-                          camera_orientations, distance_to_reference,
+def fixed_point_distances(reference_vector, camera_positions, camera_orientations,
                           verbose=False):
     """
-    Calculate the distances between fixed_point and the estimated location of
-    the fixed point from each position of the camera's optical center.
+    Calculate the distances between the estimates of the fixed point location
+    for each photo and the centroid of all the fixed point estimates.
     """
     # Calculate and return distances
     estimates = []
@@ -323,52 +310,51 @@ def fixed_point_distances(offset, fixed_point, camera_positions,
     for i, orientation in enumerate(camera_orientations):
         camera_rotation_matrix = cv2.Rodrigues(orientation)[0]
         camera_direction = camera_rotation_matrix.dot(array([[0], [0], [1]]))
-        estimate = camera_positions[i] - distance_to_reference*camera_direction
         # camera coordinate system
         ccz = row_vector(camera_direction)
-        ccx = cross([0, 1, 0], ccz)
+        ccx_vector = cross([0, 1, 0], ccz)
+        ccx = ccx_vector/norm(ccx_vector)
         ccy = cross(ccz, ccx)
-        estimate = (estimate +
-                    offset[0]*column_vector(ccx) +
-                    offset[1]*column_vector(ccy) +
-                    offset[2]*column_vector(ccz))
+        estimate = (camera_positions[i] +
+                    reference_vector[0]*column_vector(ccx) +
+                    reference_vector[1]*column_vector(ccy) +
+                    reference_vector[2]*column_vector(ccz))
         estimates.append(estimate)
-        if verbose:
-            print "estimate error"
-            print norm(estimate - column_vector(fixed_point))
-            print "vector difference"
-            print estimate - column_vector(fixed_point)
-        distances[i] = norm(estimate - column_vector(fixed_point))
-
-
+    centroid = sum(array(estimates)) / len(estimates)
+    distances = array([norm(e - centroid) for e in estimates])
     if verbose:
-        print "fixed_point:", fixed_point
-        print distances
+        print "centroid:", row_vector(centroid)
+        print "distances:", distances
         print "mean distance:", distances.mean()
         print "standard deviation of distances:", distances.std()
-        print "offset vector:", offset
-        #plot_vectors_from_center(fixed_point, camera_positions)
-        plot_vectors_from_center(fixed_point, estimates)
-        #plot_vectors(camera_positions, estimates)
-        #plot_points(camera_positions)
+        print "reference vector:", reference_vector
+        plot_vectors_from_center(centroid, camera_positions)
+        plot_vectors(camera_positions, estimates)
+        plot_points(camera_positions)
     return distances
     
 
-def fixed_point_distances_sum(rotation, fixed_point, camera_positions,
-                              camera_orientations, distance_to_reference,
+def fixed_point_distances_sum(x, camera_positions, camera_orientations,
                               verbose=False):
     """
-    Return the sum of the distances between fixed_point and the position
-    of the camera's optical center for each photo.
+    Return the sum of the distances between a fixed point in space and the
+    position of the camera's optical center for each photo.
     """
-    return fixed_point_distances(rotation, fixed_point, camera_positions,
-                                 camera_orientations,
-                                 distance_to_reference).sum()
+    return fixed_point_distances(x, camera_positions, camera_orientations).sum()
+                                     
+
+def fixed_point_distances_std(x, camera_positions, camera_orientations,
+                              verbose=False):
+    """
+    Return the standard deviation of the distances between a fixed point in
+    space and the position of the camera's optical center for each photo.
+    """
+    return fixed_point_distances(x, camera_positions, camera_orientations).std()
                                      
 
 def print_camera_parameters(reprojection_error, camera_matrix,
-                            distortion_coefficients, distance_to_reference,
-                            reference_rotation):
+                            distortion_coefficients, reference_vector,
+                            distances):
     """
     Print the camera's instrinsic parameter matrix and distortion coefficients in
     python format so it can be redirected to a file.
@@ -414,20 +400,21 @@ def print_camera_parameters(reprojection_error, camera_matrix,
     print cm_string % tuple(f for row in camera_matrix for f in row)
     print
     print
-    print "# Distance in meters from the camera's optical center to a"
+    print "# The mean distance from the centroid of reference point estimates"
+    print "# to each estimate for 9 photos."
+    print "#", distances.mean()
+    print
+    print "# The standard deviation of distances from the centroid of"
+    print "# reference point estimates to each estimate for 9 photos."
+    print "#", distances.std()
+    print
+    print "# Vector in meters from the camera's optical center to a"
     print "# stationary reference point that is independent of camera"
-    print "# orientation."
+    print "# orientation.  This vector is in terms of the camera's"
+    print "# coordinate system."
     print
-    rd_string = ("distance_to_reference = %10f")
-    print rd_string % distance_to_reference
-    print
-    print
-    print "# Rotation from the camera's orientation necessary to find the"
-    print "# direction to a stationary reference point that is independent"
-    print "# of camera orientation."
-    print
-    ro_string = ("reference_offset = array([%10f, %10f, %10f])")
-    print ro_string % tuple(f for f in reference_offset)
+    ro_string = ("reference_vector = array([%10f, %10f, %10f])")
+    print ro_string % tuple(f for f in reference_vector)
 
 
 if __name__ == "__main__":
@@ -455,15 +442,6 @@ if __name__ == "__main__":
                                 CAMERA_RESOLUTION, criteria=criteria)
     
     if DEBUG:
-        print "Reprojection error"
-        print reprojection_error
-        print
-        print "Distortion coefficients"
-        print distortion_coefficients
-        print
-        print "Camera matrix"
-        print camera_matrix
-        print
         aperture_width = 0
         aperture_height = 0
         print "Calibration matrix values output"
@@ -490,72 +468,29 @@ if __name__ == "__main__":
             find_camera_positions_and_orientations(camera_matrix,
                                                    object_positions,
                                                    object_orientations)
-    
-    point = sum(camera_positions)/len(camera_positions)
-    point = [i[0] for i in point]
-    arguments = tuple([camera_positions])
-    
-    results = minimize(point_to_positions_stddev, point, args=arguments,
-                       method='Nelder-Mead')
-    fixed_point = results['x']
-    print fixed_point
+    """
+    Calculate a vector which represents the distance and direction from the
+    camera's optical center to the fixed point in space given the camera's
+    orientation.
+    """
+    offset_vector = [0, 0, 0]
+    arguments = (camera_positions, camera_orientations)
+    results = minimize(fixed_point_distances_sum, offset_vector,
+                       args=arguments, method='Nelder-Mead')
+    reference_vector = results['x']
+    distances = fixed_point_distances(results['x'], camera_positions,
+                                      camera_orientations)
 
-    point_to_positions(fixed_point, camera_positions, verbose=True)
-    
     if DEBUG:
-        print results
-        print point_to_positions(fixed_point, camera_positions)
-        print point_to_positions(fixed_point, camera_positions).mean()
-        print point_to_positions_stddev(fixed_point, camera_positions)
-    
-    """
-    Use the mean of the distances from the optical centers to this fixed point
-    as distance_to_reference which is required for dome calibration.
-    """
-    distance_to_reference = \
-            point_to_positions(fixed_point, camera_positions).mean()
-    
-    """
-    Calculate a small offset which represents the misalignment of the
-    camera's optics and provides the best estimate of the fixed point's
-    location given the camera's orientation and the location of its optical
-    center.
-    """
-    offset = [0, 0, 0]
-
-    fixed_point_distances(offset, fixed_point, camera_positions,
-                          camera_orientations, distance_to_reference,
-                          verbose=True)
-
-    arguments = (fixed_point, camera_positions, camera_orientations,
-                      distance_to_reference)
-    
-    results = minimize(fixed_point_distances_sum, offset, args=arguments,
-                       method='Nelder-Mead')
-    
-    reference_offset = results['x']
-
-
-    fixed_point_distances(reference_offset, fixed_point, camera_positions,
-                          camera_orientations, distance_to_reference,
-                          verbose=True)
+        print results 
+        fixed_point_distances(results['x'], camera_positions,
+                              camera_orientations, verbose=True)
     
     """
     Print the camera's instrinsic parameter matrix and distortion coefficients
     in python format so it can be redirected to a file.
     """
     print_camera_parameters(reprojection_error, camera_matrix,
-                            distortion_coefficients, distance_to_reference,
-                            reference_offset)
+                            distortion_coefficients, reference_vector,
+                            distances)
     
-    """
-    136.71708679, 285.56115862, -1482.75862869,
-    136.97235317, 279.74170712, -1483.01451212,
-    132.10354717, 286.872264  , -1480.27657277,
-    118.33252634, 281.21094556, -1479.05521884,
-    131.27498592, 285.8175771 , -1481.05970816,
-    123.35073908, 282.50989701, -1480.5210565 ,
-    134.1002736,  286.39362173, -1481.93345188,
-    130.16493654, 281.11123059, -1480.25389834,
-    119.56913757, 282.56104924, -1479.42596711
-    """
