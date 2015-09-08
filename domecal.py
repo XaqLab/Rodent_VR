@@ -5,7 +5,6 @@ import win32con
 
 # import dome projection stuff
 from dome_projection import DomeProjection
-from dome_calibration import calc_projector_images
 
 NUM_PARAMETERS = 10
 PROJECTOR_PIXEL_WIDTH = 1280
@@ -20,59 +19,73 @@ YELLOW = win32api.RGB(255, 255, 0)
 CYAN = win32api.RGB(0, 255, 255)
 PURPLE = win32api.RGB(255, 0, 255)
 WHITE = win32api.RGB(255, 255, 255)
-PIXEL_COLOR = (WHITE, GREEN, WHITE,
-               CYAN, YELLOW, CYAN,
-               WHITE, GREEN, WHITE)
+pixel_colors = [WHITE, GREEN, WHITE,
+                CYAN, YELLOW, CYAN,
+                WHITE, GREEN, WHITE]
 
 # key codes not found in win32con
-VK_OEM_PLUS = 0xbb
-VK_OEM_MINUS = 0xbd
+VK_0 = 0x30
+VK_1 = 0x31
+VK_2 = 0x32
+VK_3 = 0x33
+VK_4 = 0x34
+VK_5 = 0x35
+VK_6 = 0x36
+VK_7 = 0x37
+VK_8 = 0x38
+VK_9 = 0x39
+VK_F = 0x46
 VK_O = 0x4f
 VK_S = 0x53
+VK_OEM_PLUS = 0xbb
+VK_OEM_MINUS = 0xbd
+
+# window styles
+regular_window = (win32con.WS_THICKFRAME | win32con.WS_VISIBLE |
+                  win32con.WS_SYSMENU | win32con.DS_SETFONT |
+                  win32con.WS_MINIMIZEBOX)
+fullscreen_window = (win32con.WS_VISIBLE |
+                     win32con.DS_SETFONT)
+window_styles = {"regular":regular_window,
+                 "fullscreen":fullscreen_window}
 
 class MainWindow():
     """ The main application window class """
 
     def __init__(self):
-        initial_geometry = DomeProjection()
-        self._current_parameter = 0
-        # initialize parameter names
-        self._parameter_names = ["Mirror Radius",
-                                 "Dome Radius",
-                                 "Dome y-coordinate",
-                                 "Dome z-coordinate",
-                                 "Animal y-coordinate",
-                                 "Animal z-coordinate",
-                                 "Projector horizontal field of view",
-                                 "Projector vertical throw",
-                                 "Projector y-coordinate",
-                                 "Projector z-coordinate"]
-        # initialize the increment for each parameter
-        self._increments = [1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2,
-                            1e-2, 1e-2]
-        # initialize parameter values
-        self._parameter_values = []
-        self._parameter_values.append(initial_geometry.get_mirror_radius())
-        self._parameter_values.append(initial_geometry.get_dome_radius())
-        dome_y, dome_z = initial_geometry.get_dome_position()
-        self._parameter_values.extend([dome_y, dome_z])
-        animal_y, animal_z = initial_geometry.get_animal_position()
-        self._parameter_values.extend([animal_y, animal_z])
-        self._parameter_values.extend(initial_geometry.get_frustum_parameters())
+        dome = DomeProjection()
         # guess some initial projector pixel values
-        self._pixels = [[570, 640], [548, 332], [470, 118],
+        self._pixels = [[333, 640], [318, 527], [273, 471],
                         [435, 640], [412, 425], [339, 296],
-                        [333, 640], [318, 527], [273, 471]]
-        #self._pixels = [[469, 1160], [547, 948], [569, 640], [547, 331], [469, 119],
-        #                [300, 895], [360, 804], [380, 639], [360, 475], [300, 384]]
+                        [570, 640], [548, 332], [470, 118]]
+        # find the projector pixels for the calibration directions using the
+        # default parameter values
+        self._pixels = dome.find_projector_pixels(dome.calibration_directions,
+                                                  self._pixels)
+        # Since there are an even number of pixels in each row, no pixel is
+        # centered on the 0 yaw line which is located at column 639.5.
+        # Two by two squares of pixels are used so that spots can be centered
+        # at this half pixel location.  Here I make sure pixels 0, 3, and 6 are
+        # on the zero yaw line and add 0.5 all the other pixel's rows and
+        # columns.
+        for i in range(len(self._pixels)):
+            pixel = self._pixels[i]
+            if i in [0, 3, 6]:
+                pixel[1] = PROJECTOR_PIXEL_WIDTH/2 - 0.5
+            else:
+                pixel[1] = pixel[1] + 0.5
+            pixel[0] = pixel[0] + 0.5
+        # initialize the increment for each pixel in the image
+        self._increment = 10
+        # initialize the pixel selected for moving
+        self._selected_pixel = 0
         # setup the window
         self._name = "MainWindow"
         self._title = "Dome Calibration"
         self._width = PROJECTOR_PIXEL_WIDTH
         self._height = PROJECTOR_PIXEL_HEIGHT
-        self._style = (win32con.WS_THICKFRAME | win32con.WS_VISIBLE |
-                       win32con.WS_SYSMENU | win32con.DS_SETFONT |
-                       win32con.WS_MINIMIZEBOX)
+        self._style = window_styles["regular"]
+        self._fullscreen = False
         win32gui.InitCommonControls()
         self._hinstance = win32gui.dllhandle
         wc = win32gui.WNDCLASS()
@@ -96,29 +109,8 @@ class MainWindow():
         win32gui.UpdateWindow(self._hwnd)
         # This is used to stop autorepeat which is annoying for our purposes
         self._first_keydown = True
-        self._parameter_changed = False
         self._display_string = ""
         self._show_help = False
-
-
-    # Return the parameter dictionary used to instantiate DomeProjection
-    def _parameters(self):
-        # setup the parameters dictionary
-        image1, image2 = calc_projector_images(self._parameter_values[8],
-                                               self._parameter_values[9],
-                                               self._parameter_values[6],
-                                               self._parameter_values[7])
-        parameters = dict(projector_pixel_width = PROJECTOR_PIXEL_WIDTH,
-                          projector_pixel_height = PROJECTOR_PIXEL_HEIGHT,
-                          first_projector_image = image1,
-                          second_projector_image = image2,
-                          mirror_radius = self._parameter_values[0],
-                          dome_center = [0, self._parameter_values[2],
-                                         self._parameter_values[3]],
-                          dome_radius = self._parameter_values[1],
-                          animal_position = [0, self._parameter_values[4],
-                                             self._parameter_values[5]])
-        return parameters
 
 
     # Save the parameters to a text file
@@ -134,14 +126,13 @@ class MainWindow():
             if file_name:
                 try:
                     parameter_file = open(file_name, "w")
-                    for i in range(NUM_PARAMETERS):
-                        parameter_file.write("%s = %f\n" %
-                                             (self._parameter_names[i],
-                                              self._parameter_values[i]))
                     for pixel in self._pixels:
-                        parameter_file.write("%d, %d\n" % (pixel[0], pixel[1]))
+                        parameter_file.write("%.1f, %.1f\n" % (pixel[0], pixel[1]))
+                    for i in range(len(pixel_colors)):
+                        parameter_file.write("0x%06x\n" % (pixel_colors[i]))
                     parameter_file.close()
-                except:
+                except Exception, e:
+                    print str(e)
                     win32gui.MessageBox(None, "Error saving parameter file!",
                                     "Error", win32con.MB_ICONERROR |
                                     win32con.MB_OK)
@@ -163,22 +154,16 @@ class MainWindow():
             if file_name:
                 try:
                     parameter_file = open(file_name, "r")
-                    for i in range(NUM_PARAMETERS):
-                        line = parameter_file.readline()
-                        parameter_name, parameter_value = line.split(" = ")
-                        if parameter_name in self._parameter_names:
-                            index = self._parameter_names.index(parameter_name)
-                            self._parameter_values[index] = float(parameter_value)
-                        else:
-                            win32gui.MessageBox(None, "Unknown parameter!",
-                                                "Error", win32con.MB_ICONERROR |
-                                                win32con.MB_OK)
                     for i in range(len(self._pixels)):
                         line = parameter_file.readline()
                         row, col = line.split(", ")
-                        self._pixels[i] = [int(row), int(col)]
+                        self._pixels[i] = [float(row), float(col)]
+                    for i in range(len(pixel_colors)):
+                        line = parameter_file.readline()
+                        pixel_colors[i] = int(line, 16)
                     parameter_file.close()
-                except:
+                except Exception, e:
+                    print str(e)
                     win32gui.MessageBox(None, "Error reading parameter file!",
                                         "Error", win32con.MB_ICONERROR |
                                         win32con.MB_OK)
@@ -214,25 +199,46 @@ class MainWindow():
             return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
 
 
+    def enterFullscreen(self):
+        self._fullscreen = True
+        self._style = window_styles["fullscreen"]
+        win32gui.SetWindowLong(self._hwnd, win32con.GWL_STYLE, self._style)
+        self._width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
+        self._height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+        win32gui.SetWindowPos(self._hwnd, win32con.HWND_TOP, 0, 0,
+                              self._width, self._height,
+                              win32con.SWP_FRAMECHANGED)
+
+
+    def exitFullscreen(self):
+        self._fullscreen = False
+        self._style = window_styles["regular"]
+        win32gui.SetWindowLong(self._hwnd, win32con.GWL_STYLE, self._style)
+        self._width = PROJECTOR_PIXEL_WIDTH - 1
+        self._height = PROJECTOR_PIXEL_HEIGHT - 1
+        win32gui.SetWindowPos(self._hwnd, win32con.HWND_TOP, 0, 0,
+                              self._width, self._height,
+                              win32con.SWP_FRAMECHANGED)
+
+
     # Draw the window
     def OnPaint(self, hwnd, msg, wparam, lparam):
         dc, ps = win32gui.BeginPaint(hwnd)
         brush = win32gui.CreateSolidBrush(BLACK)
         win32gui.SelectObject(dc, brush)
-        win32gui.Rectangle(dc, 0, 0, PROJECTOR_PIXEL_WIDTH - 1,
-                           PROJECTOR_PIXEL_HEIGHT - 1)
-        pixel_color = win32api.RGB(0, 255, 0)
-        diamond_size = 3
-        half_size = (diamond_size - 1)/2
+        win32gui.Rectangle(dc, 0, 0, self._width - 1, self._height - 1)
+        # draw a square of four pixels for each center pixel
         for i in range(len(self._pixels)):
             pixel = self._pixels[i]
-            center_row = int(pixel[0])
-            center_col = int(pixel[1])
-            for row in range(center_row - half_size,
-                             center_row + half_size + 1):
-                for col in range(center_col - half_size + abs(row - center_row),
-                                 center_col + half_size + 1 - abs(row - center_row)):
-                    win32gui.SetPixel(dc, col, row, PIXEL_COLOR[i])
+            left = int(pixel[1])
+            right = left + 1
+            top = int(pixel[0])
+            bottom = top + 1
+            for row in [top, bottom]:
+                for col in [left, right]:
+                    print row, col
+                    win32gui.SetPixel(dc, col, row, pixel_colors[i])
+            print
         win32gui.SetBkColor(dc, BLACK);
         win32gui.SetTextColor(dc, WHITE)
         win32gui.EndPaint(hwnd, ps)
@@ -247,46 +253,71 @@ class MainWindow():
             self._first_keydown = False
             self._display_string = ""
             if wparam == win32con.VK_UP:
-                self._parameter_changed = True
-                self._parameter_values[self._current_parameter] += \
-                        self._increments[self._current_parameter]
-                self._display_string = ("%s = %.3f" %
-                                  (self._parameter_names[self._current_parameter],
-                                   self._parameter_values[self._current_parameter]))
+                self._pixels[self._selected_pixel][0] -= self._increment
     
             elif wparam == win32con.VK_DOWN:
-                self._parameter_changed = True
-                self._parameter_values[self._current_parameter] -= \
-                        self._increments[self._current_parameter]
-                self._display_string = ("%s = %.3f" %
-                                  (self._parameter_names[self._current_parameter],
-                                   self._parameter_values[self._current_parameter]))
+                self._pixels[self._selected_pixel][0] += self._increment
     
             elif wparam == win32con.VK_LEFT:
-                self._current_parameter = self._current_parameter - 1
-                if (self._current_parameter < 0):
-                    # roll around to last parameter
-                    self._current_parameter = NUM_PARAMETERS - 1
-                self._display_string = ("%s = %.3f" %
-                                  (self._parameter_names[self._current_parameter],
-                                   self._parameter_values[self._current_parameter]))
+                if self._selected_pixel in [1, 2, 4, 5, 7, 8]:
+                    """ don't allow horizontal movement
+                    of 0 yaw pixels [0, 3, 6] """
+                    self._pixels[self._selected_pixel][1] += self._increment
     
             elif wparam == win32con.VK_RIGHT:
-                self._current_parameter = self._current_parameter + 1
-                self._current_parameter = self._current_parameter % NUM_PARAMETERS
-                self._display_string = ("%s = %.3f" %
-                                  (self._parameter_names[self._current_parameter],
-                                   self._parameter_values[self._current_parameter]))
+                if self._selected_pixel in [1, 2, 4, 5, 7, 8]:
+                    """ don't allow horizontal movement
+                    of 0 yaw pixels [0, 3, 6] """
+                    self._pixels[self._selected_pixel][1] -= self._increment
+    
+            elif wparam == VK_1:
+                self._selected_pixel = 0
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+    
+            elif wparam == VK_2:
+                self._selected_pixel = 1
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+    
+            elif wparam == VK_3:
+                self._selected_pixel = 2
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+    
+            elif wparam == VK_4:
+                self._selected_pixel = 3
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+    
+            elif wparam == VK_5:
+                self._selected_pixel = 4
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+    
+            elif wparam == VK_6:
+                self._selected_pixel = 5
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+    
+            elif wparam == VK_7:
+                self._selected_pixel = 6
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+    
+            elif wparam == VK_8:
+                self._selected_pixel = 7
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+    
+            elif wparam == VK_9:
+                self._selected_pixel = 8
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
     
             elif wparam == win32con.VK_CONTROL:
-                self._display_string = "increment = %.3f" % \
-                        self._increments[self._current_parameter]
+                self._display_string = "increment = %d" % self._increment
     
             elif wparam == win32con.VK_SHIFT:
-                self._display_string = ("%s = %.3f" %
-                                  (self._parameter_names[self._current_parameter],
-                                   self._parameter_values[self._current_parameter]))
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
     
+            elif wparam == VK_F:
+                if self._fullscreen:
+                    self.exitFullscreen()
+                else:
+                    self.enterFullscreen()
+
             elif wparam == VK_O:
                 # read parameters and pixels from a file
                 self.openParameterFile(hwnd)
@@ -298,14 +329,12 @@ class MainWindow():
                 self.saveParameterFile(hwnd)
     
             elif wparam == VK_OEM_PLUS:
-                self._increments[self._current_parameter] *= 10.0
-                self._display_string = "increment = %.3f" % \
-                        self._increments[self._current_parameter]
+                self._increment = 10
+                self._display_string = "increment = %d" % self._increment
     
             elif wparam == VK_OEM_MINUS:
-                self._increments[self._current_parameter] /= 10.0
-                self._display_string = "increment = %.3f" % \
-                        self._increments[self._current_parameter]
+                self._increment = 1
+                self._display_string = "increment = %d" % self._increment
     
             else:
                 self._show_help = True
@@ -328,35 +357,29 @@ class MainWindow():
     def OnKeyUp(self, hwnd, msg, wparam, lparam):
         # reset _first_keydown for the next keypress
         self._first_keydown = True
-        if self._parameter_changed:
-            self._parameter_changed = False
-            # update the projector pixels using the new parameter values
-            dome = DomeProjection(**self._parameters())
-            self._pixels = \
-                    dome.find_projector_pixels(dome.calibration_directions,
-                                               self._pixels)
+        # redraw the window
+        win32gui.RedrawWindow(hwnd, None, None, win32con.RDW_INVALIDATE |
+                              win32con.RDW_INTERNALPAINT)
         if self._display_string:
-            # redraw the window to erase onscreen display
-            win32gui.RedrawWindow(hwnd, None, None, win32con.RDW_INVALIDATE |
-                                win32con.RDW_INTERNALPAINT)
+            # invalidate the onscreen display
             win32gui.InvalidateRect(hwnd, self._onscreen_display, True)
         if self._show_help:
             self._show_help = False
             # show help dialog box
             win32gui.MessageBox(None,
-                                "Up Arrow: increase parameter value\n" +
-                                "Down Arrow: decrease parameter value\n" +
-                                "Right Arrow: next parameter\n" +
-                                "Left Arrow: previous parameter\n" +
-                                "Plus: increase parameter increment\n" +
-                                "Minus: decrease parameter increment\n" +
-                                "O: open parameter file\n" +
-                                "S: save parameter file\n" +
-                                "Shift: show current parameter value\n" +
-                                "Control: show current parameter increment\n",
+                                "Up Arrow: move selected pixel up\n" +
+                                "Down Arrow: move selected pixel down\n" +
+                                "Right Arrow: move selected pixel right\n" +
+                                "Left Arrow: move selected pixel left\n" +
+                                "Plus: change pixel increment to 10 pixels\n" +
+                                "Minus: change pixel increment to 1 pixel\n" +
+                                "F: toggle full screen\n" +
+                                "O: open pixel file\n" +
+                                "S: save pixel file\n" +
+                                "Shift: show select pixel number\n" +
+                                "Control: show current pixel increment\n",
                                 "Help", win32con.MB_ICONINFORMATION |
                                 win32con.MB_OK)
-
 
 
 if __name__ == '__main__':
