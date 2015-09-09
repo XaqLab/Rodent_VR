@@ -12,13 +12,13 @@ PROJECTOR_PIXEL_HEIGHT = 720
 
 # Color constants
 BLACK = win32api.RGB(0, 0, 0)
-RED = win32api.RGB(255, 0, 0)
-GREEN = win32api.RGB(0, 255, 0)
-BLUE = win32api.RGB(0, 0, 255)
-YELLOW = win32api.RGB(255, 255, 0)
-CYAN = win32api.RGB(0, 255, 255)
-PURPLE = win32api.RGB(255, 0, 255)
-WHITE = win32api.RGB(255, 255, 255)
+RED = win32api.RGB(128, 0, 0)
+GREEN = win32api.RGB(0, 128, 0)
+BLUE = win32api.RGB(0, 0, 128)
+YELLOW = win32api.RGB(128, 128, 0)
+CYAN = win32api.RGB(0, 128, 128)
+PURPLE = win32api.RGB(128, 0, 128)
+WHITE = win32api.RGB(128, 128, 128)
 pixel_colors = [WHITE, GREEN, WHITE,
                 CYAN, YELLOW, CYAN,
                 WHITE, GREEN, WHITE]
@@ -98,7 +98,7 @@ class MainWindow():
         except win32gui.error, err_info:
             if err_info.winerror!=winerror.ERROR_CLASS_ALREADY_EXISTS:
                 raise
-        self._onscreen_display = (0, 0, PROJECTOR_PIXEL_WIDTH, 30)
+        self._onscreen_display = (0, 0, self._width, 30)
         self._hwnd = win32gui.CreateWindow(self._name, self._title,
                                            self._style,
                                            win32con.CW_USEDEFAULT,
@@ -203,8 +203,9 @@ class MainWindow():
         self._fullscreen = True
         self._style = window_styles["fullscreen"]
         win32gui.SetWindowLong(self._hwnd, win32con.GWL_STYLE, self._style)
-        self._width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
-        self._height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+        self._width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN) + 1
+        self._height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN) + 1
+        self._onscreen_display = (0, 0, self._width, 30)
         win32gui.SetWindowPos(self._hwnd, win32con.HWND_TOP, 0, 0,
                               self._width, self._height,
                               win32con.SWP_FRAMECHANGED)
@@ -214,8 +215,9 @@ class MainWindow():
         self._fullscreen = False
         self._style = window_styles["regular"]
         win32gui.SetWindowLong(self._hwnd, win32con.GWL_STYLE, self._style)
-        self._width = PROJECTOR_PIXEL_WIDTH - 1
-        self._height = PROJECTOR_PIXEL_HEIGHT - 1
+        self._width = PROJECTOR_PIXEL_WIDTH
+        self._height = PROJECTOR_PIXEL_HEIGHT
+        self._onscreen_display = (0, 0, self._width, 30)
         win32gui.SetWindowPos(self._hwnd, win32con.HWND_TOP, 0, 0,
                               self._width, self._height,
                               win32con.SWP_FRAMECHANGED)
@@ -230,15 +232,13 @@ class MainWindow():
         # draw a square of four pixels for each center pixel
         for i in range(len(self._pixels)):
             pixel = self._pixels[i]
-            left = int(pixel[1])
+            left = int(pixel[1]*self._width/PROJECTOR_PIXEL_WIDTH)
             right = left + 1
-            top = int(pixel[0])
+            top = int(pixel[0]*self._height/PROJECTOR_PIXEL_HEIGHT)
             bottom = top + 1
             for row in [top, bottom]:
                 for col in [left, right]:
-                    print row, col
                     win32gui.SetPixel(dc, col, row, pixel_colors[i])
-            print
         win32gui.SetBkColor(dc, BLACK);
         win32gui.SetTextColor(dc, WHITE)
         win32gui.EndPaint(hwnd, ps)
