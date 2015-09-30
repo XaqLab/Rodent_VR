@@ -30,7 +30,7 @@ right.
 import sys
 from PIL import Image
 from numpy import pi, sin, cos, tan, arcsin, arccos, arctan, arctan2
-from numpy import array, uint8, dot, linalg, sqrt, float32
+from numpy import array, uint8, dot, linalg, sqrt, float32, cross
 from numpy.linalg import norm, inv
 from scipy.optimize import minimize, fsolve
 from scipy import ndimage
@@ -57,6 +57,8 @@ UPPER_RIGHT_PHOTO = 3  # defined to make the code easier to read
 # debug stuff
 DEBUG = True
 previous_parameters = None
+best_parameters = None
+best_sum_of_errors = 100
 
 
 def read_pixel_list(filename):
@@ -70,7 +72,7 @@ def read_pixel_list(filename):
         for line in pixel_list_file:
             try:
                 row, column = line.split(", ")
-                pixel_list.append([int(row), int(column)])
+                pixel_list.append([float(row), float(column)])
             except:
                 # ignore lines with parameter values
                 pass
@@ -79,6 +81,24 @@ def read_pixel_list(filename):
         print "Error reading pixel list from", filename
         exit()
     return pixel_list
+
+
+def column_vector(vector):
+    """
+    take a list or array and make sure it's in column vector format for Open CV
+    """
+    shape = array(vector).shape
+    assert len(shape) < 3, "Input vector must have less than three dimensions."
+    if len(shape) > 1:
+        assert 1 in shape
+    length = len(vector)
+    if shape == (length, 1):
+        # input is a column vector
+        column_vector = array(vector, dtype=float32)
+    else:
+        # input is a row vector
+        column_vector = array([[i] for i in vector], dtype=float32)
+    return column_vector
 
 
 def pixels_to_points(pixels, pixel_width, pixel_height):
@@ -144,7 +164,7 @@ def remove_distortion(points, coefficients):
     return [[x_undistorted[i], y_undistorted[i]] for i in range(len(points))]
 
 
-def find_center_pixels(image, blur=2):
+def find_center_pixels(image, blur=2, remove_distortion=True):
     """
     This function returns list of center pixels for light colored objects on a
     dark background in a grey scale camera photo.  The objects are
@@ -168,23 +188,38 @@ def find_center_pixels(image, blur=2):
     labeled_pixels, num_labels = ndimage.label(object_pixels)
     center_pixels = ndimage.center_of_mass(pixels, labeled_pixels,
                                            range(1, num_labels + 1))
-
     if False:
         """ invert the center pixels so they can be seen """
         for pixel in center_pixels:
             object_pixels[int(round(pixel[0])), int(round(pixel[1]))] = 0
         Image.fromarray(255*object_pixels).show()
     
-    # Convert center_pixels to the format that Open CV requires
-    opencv_pixels = array([[[p[0], p[1]]] for p in center_pixels],
-                          dtype=float32)
-    undist_pixels = cv2.undistortPoints(opencv_pixels, camera.matrix,
-                                        camera.distortion_coefficients,
-                                        R=None, P=camera.matrix)
-    # Convert undist_pixels back to a simple array of pixels
-    center_pixels = array([[p[0, 1], p[0, 0]] for p in undist_pixels])
+    if remove_distortion:
+        # Convert center_pixels to the format that Open CV requires
+        opencv_pixels = array([[[p[1], p[0]]] for p in center_pixels],
+                            dtype=float32)
+        undist_pixels = cv2.undistortPoints(opencv_pixels, camera.matrix,
+                                            camera.distortion_coefficients,
+                                            R=None, P=camera.matrix)
+        # Convert undist_pixels back to a simple array of pixels
+        center_pixels = array([[p[0, 1], p[0, 0]] for p in undist_pixels])
+
+        if False:
+            """ invert the center pixels so they can be seen """
+            for pixel in center_pixels:
+                object_pixels[int(round(pixel[0])), int(round(pixel[1]))] = \
+                        0x80
+            Image.fromarray(255*object_pixels).show()
 
     return center_pixels
+
+
+def rotate(vector, rotation_vector):
+    """ rotate vector around rotation_vector by an angle equal to the magnitude
+    of rotation_vector (clockwise rotation when looking in the rotation_vector
+    direction) """
+    rotation_matrix = cv2.Rodrigues(column_vector(rotation_vector))[0]
+    return rotation_matrix.dot(vector)
 
 
 def calc_distance_to_dome(parameters, position, direction):
@@ -197,16 +232,22 @@ def calc_distance_to_dome(parameters, position, direction):
     intersect the dome.  This should be prevented by judicious choice of 
     parameter bounds.
     """
-    assert (linalg.norm(direction) - 1.0) < 1e-12
+    assert (linalg.norm(direction) - 1.0) < 1e-6, linalg.norm(direction) - 1.0
     dome_center = parameters['dome_center']
     dome_radius = parameters['dome_radius']
     position_to_dome_center = array(dome_center) - array(position)
-    theta = arccos(position_to_dome_center.dot(direction) /
-                   linalg.norm(position_to_dome_center))
+    distance_to_dome_center = linalg.norm(position_to_dome_center)
+    if distance_to_dome_center > 0:
+        theta = arccos(position_to_dome_center.dot(direction) /
+                       distance_to_dome_center)
+    else:
+        # avoid division by zero
+        theta = 0
     a = 1.0
     b = -2*linalg.norm(position_to_dome_center)*cos(theta)
     c = linalg.norm(position_to_dome_center)**2 - dome_radius**2
     if b**2 - 4*a*c < 0:
+        # no solution, start debugger to see what's going on
         import pdb; pdb.set_trace()
     d = sqrt(b**2 - 4*a*c)
     r = max([(-b + d) / (2*a), (-b - d) / (2*a)])
@@ -218,19 +259,37 @@ def find_viewing_direction(photo_pixel, camera_direction, parameters):
     Use the camera orientation and the direction to a pixel in the photo
     to find the (x, y, z) coordinates of the pixel on the dome.
     """
+    # find the camera's coordinate system in terms of the dome coordinate
+    # system
+    ccz = camera_direction
+    ccx_vector = cross([0, 0, -1], ccz)
+    ccx = ccx_vector/norm(ccx_vector)
+    ccy = cross(ccz, ccx)
+    # find the camera's reference vector in dome coordinates
+    reference_vector = (camera.reference_vector[0]*ccx +
+                        camera.reference_vector[1]*ccy +
+                        camera.reference_vector[2]*ccz)
     animal_position = parameters['animal_position']
-    camera_focal_point = (array(animal_position)
-                          + (camera.axes_to_lens - camera.focal_length)
-                          * camera_direction)
+    camera_focal_point = animal_position - reference_vector
     [x, y, z] = camera_direction
     camera_pitch = arcsin(z)
     camera_yaw = arctan2(x, y)
-    photo_point = array([photo_pixel[0], photo_pixel[1], 1])
+    photo_point = array([photo_pixel[1], photo_pixel[0], 1])
+    # find the vector to this point in camera coordinates
     point_vector = inv(camera.matrix).dot(photo_point)
+    # rotate the vector to match the dome coordinate system and account for
+    # camera orientation
+    point_vector = rotate(point_vector, array([camera_pitch - pi/2, 0, 0]))
+    point_vector = rotate(point_vector, array([0, 0, -camera_yaw]))
+    #rotation_vector = array([-pi/2, 0, 0])
+    #rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
+    #point_vector = rotation_matrix.dot(point_vector)
     point_direction = point_vector / norm(point_vector)
     [x, y, z] = point_direction
     point_pitch = arcsin(z)
     point_yaw = arctan2(x, y)
+    #print "Point pitch:", 180/pi*point_pitch
+    #print "Point yaw:", 180/pi*point_yaw
     distance_to_dome = calc_distance_to_dome(parameters,
                                              camera_focal_point,
                                              point_direction)
@@ -245,8 +304,8 @@ def find_viewing_direction(photo_pixel, camera_direction, parameters):
     return viewing_direction
 
 
-def camera_orientation(orientation, lower_left_pixel, known_direction,
-                       parameters):
+def camera_orientation_error(orientation, lower_left_pixel, known_direction,
+                             parameters):
     """
     Calculate the pitch and yaw of lower_left_pixel and compare it to the
     pitch and yaw of known_direction.  The camera orientation is correct when
@@ -259,20 +318,10 @@ def camera_orientation(orientation, lower_left_pixel, known_direction,
     viewing_direction = find_viewing_direction(lower_left_pixel,
                                                camera_direction,
                                                parameters)
-    [x, y, z] = viewing_direction
-    viewing_pitch = arcsin(z)
-    viewing_yaw = arctan2(x, y)
-    """ Find the pitch and yaw of known_direction. """
-    [x, y, z] = known_direction
-    known_pitch = arcsin(z)
-    known_yaw = arctan2(x, y)
     """
-    viewing_pitch and known_pitch should be equal as should viewing_yaw
-    and known_yaw
+    viewing direction and known direction should be equal
     """
-    f1 = viewing_pitch - known_pitch
-    f2 = viewing_yaw - known_yaw
-    return (f1, f2)
+    return norm(viewing_direction - known_direction)
     
 
 def calc_viewing_directions(photo_pixels, parameters):
@@ -281,8 +330,8 @@ def calc_viewing_directions(photo_pixels, parameters):
     calibration photos.  
     """
     [upper_left, upper_right, lower_left, lower_right] = photo_pixels
-    middle_row = parameters["image_pixel_height"][0]/2 + 0.5
-    middle_col = parameters["image_pixel_width"][0]/2 + 0.5
+    middle_row = camera.pixel_height/2 + 0.5
+    middle_col = camera.pixel_width/2 + 0.5
     """
     Start with the lower left photo because it is the only one that contains
     an object with a known viewing direction.  The lower left object in this
@@ -293,19 +342,41 @@ def calc_viewing_directions(photo_pixels, parameters):
     viewing_directions = [[0.0, 1.0, 0.0]] * 9
     animal_position = parameters['animal_position']
     for photo in range(len(photos)):
+        #print "Photo number:", photo
         for pixel in photos[photo]:
             [row, col] = pixel
             if row > middle_row and col < middle_col:
                 lower_left_pixel = pixel
+                #print "Lower left pixel:", lower_left_pixel
         """
         Find the camera orientation for this photo.
         """
         [x, y, z] = known_directions[photo]
-        known_direction_pitch = arcsin(z)
-        known_direction_yaw = arctan2(x, y)
-        x0 = (known_direction_pitch, known_direction_yaw)
+        known_pitch = arcsin(z)
+        known_yaw = arctan2(x, y)
+        #print "Known pitch, yaw:    %11f, %11f" % (180/pi*known_pitch,
+                                                   #180/pi*known_yaw)
+        apparent_direction = find_viewing_direction(lower_left_pixel,
+                                                    array([0, 1, 0]),
+                                                    parameters)
+        [x, y, z] = apparent_direction
+        apparent_pitch = arcsin(z)
+        apparent_yaw = arctan2(x, y)
+        #print "Apparent pitch, yaw: %11f, %11f"  % (180/pi*apparent_pitch,
+                                                    #180/pi*apparent_yaw)
+        starting_pitch = known_pitch - apparent_pitch
+        starting_yaw = known_yaw - apparent_yaw
+        #print "Starting pitch, yaw: %11f, %11f" % (180/pi*starting_pitch,
+                                                   #180/pi*starting_yaw)
+        starting_orientation = (starting_pitch, starting_yaw)
         args = (lower_left_pixel, known_directions[photo], parameters)
-        camera_pitch, camera_yaw = fsolve(camera_orientation, x0, args)
+        results = minimize(camera_orientation_error, starting_orientation,
+                           args=args, method='Nelder-Mead',
+                           options={'xtol':1e-9})
+        camera_pitch, camera_yaw = results['x']
+        #print "Camera pitch, yaw:   %11f, %11f" % (180/pi*camera_pitch,
+                                                   #180/pi*camera_yaw)
+        #import pdb; pdb.set_trace()
         camera_direction = array([cos(camera_pitch)*sin(camera_yaw),
                                   cos(camera_pitch)*cos(camera_yaw),
                                   sin(camera_pitch)])
@@ -352,6 +423,12 @@ def calc_viewing_directions(photo_pixels, parameters):
                     viewing_directions[7] = viewing_direction
                 elif photo == UPPER_RIGHT_PHOTO:
                     viewing_directions[8] = viewing_direction
+    # re-arrange the order of the viewing directions to match the pixel
+    # list, left to right, top to bottom
+    top_row = viewing_directions[6:9]
+    middle_row = viewing_directions[3:6]
+    bottom_row = viewing_directions[0:3]
+    viewing_directions = top_row + middle_row + bottom_row
     return viewing_directions
 
 
@@ -422,11 +499,15 @@ def calc_frustum_parameters(image1, image2):
 def dome_distortion(x, projector_pixels, photo_pixels):
     # debug stuff
     global previous_parameters
+    global best_sum_of_errors
+    global best_parameters
     """
     Calculate the sum of the square differences between the actual and
     estimated viewing directions.
     """
+    # there are 9 spots in the calibration image
     assert len(projector_pixels) == 9
+    # 4 overlapping photos are taken, each containing 4 spots
     assert len(photo_pixels) == 4
     """ decode x into meaningful names and setup the parameters dictionary """
     projector_y = x[0]
@@ -435,18 +516,20 @@ def dome_distortion(x, projector_pixels, photo_pixels):
     vertical_offset = x[3]
     projector_images = calc_projector_images(projector_y, projector_z,
                                              projector_theta, vertical_offset)
-    mirror_radius = x[4]
-    dome_y = x[5]
-    dome_z = x[6]
-    dome_radius = x[7]
-    animal_y = x[8]
-    animal_z = x[9]
+    projector_roll = x[4]
+    mirror_radius = x[5]
+    dome_y = x[6]
+    dome_z = x[7]
+    dome_radius = x[8]
+    animal_y = x[9]
+    animal_z = x[10]
     parameters = dict(image_pixel_width = [1280],
                       image_pixel_height = [720],
                       projector_pixel_width = 1280,
                       projector_pixel_height = 720,
                       first_projector_image = projector_images[0],
                       second_projector_image = projector_images[1],
+                      projector_roll = projector_roll,
                       mirror_radius = mirror_radius,
                       dome_center = [0, dome_y, dome_z],
                       dome_radius = dome_radius,
@@ -498,6 +581,10 @@ def dome_distortion(x, projector_pixels, photo_pixels):
 
     print
     print "Sum of errors:", sum_of_errors
+    if sum_of_errors < best_sum_of_errors:
+        best_sum_of_errors = sum_of_errors
+        best_parameters = dict(parameters)
+    #import pdb; pdb.set_trace()
     return sum_of_errors
 
 
@@ -559,6 +646,7 @@ if __name__ == "__main__":
                                   [0.115, 0.265, 0.186],
                                   [0.115, 0.265, 0.054],
                                   [-0.115, 0.265, 0.054]]
+        projector_roll = 0
         mirror_radius = 0.215
         dome_center = [0, 0.138, 0.309]
         dome_radius = 0.603
@@ -566,7 +654,8 @@ if __name__ == "__main__":
         
         x0 = (calc_frustum_parameters(first_projector_image,
                                       second_projector_image) + 
-              [mirror_radius,
+              [projector_roll,
+               mirror_radius,
                dome_center[1],
                dome_center[2],
                dome_radius,
@@ -576,6 +665,7 @@ if __name__ == "__main__":
         # Make sure mirror radius and dome radii are > 0, and limit the
         # animal's z-coordinate to keep it inside the dome
         parameter_bounds = [(None, None),
+                            (None, None),
                             (None, None),
                             (None, None),
                             (None, None),
@@ -602,17 +692,19 @@ if __name__ == "__main__":
                                                  projector_z,
                                                  projector_theta,
                                                  vertical_offset)
-        mirror_radius = results['x'][4]
-        dome_y = results['x'][5]
-        dome_z = results['x'][6]
-        dome_radius = results['x'][7]
-        animal_y = results['x'][8]
-        animal_z = results['x'][9]
+        projector_roll = results['x'][4]
+        mirror_radius = results['x'][5]
+        dome_y = results['x'][6]
+        dome_z = results['x'][7]
+        dome_radius = results['x'][8]
+        animal_y = results['x'][9]
+        animal_z = results['x'][10]
 
         # Print out the estimated parameter values
         for image in projector_images:
             for row in image:
                 print row
+        print "Projector roll:", projector_roll
         print "Mirror radius:", mirror_radius
         print "Dome y-coordinate:", dome_y
         print "Dome z-coordinate:", dome_z
