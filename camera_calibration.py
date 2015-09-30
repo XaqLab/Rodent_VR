@@ -261,15 +261,9 @@ def find_camera_positions_and_orientations(camera_matrix, object_positions,
         optical_axis = [0, 0, 1]
         rotation_vector = find_rotation_vector(object_positions[i],
                                                optical_axis)
-        #rotation_vector = find_rotation_vector(optical_axis,
-        #                                       object_positions[i])
         # Determine the camera's orientation by rotating from the direction to
         # the object origin to the direction of the camera's optical axis in
         # the object coordinate system.
-        #camera_orientations[i] = cv2.composeRT(-object_orientations[i],
-                                               #column_vector([0, 0, 0]),
-                                               #rotation_vector,
-                                               #column_vector([0, 0, 0]))[0]
         camera_orientations[i] = -object_orientations[i]
     return camera_positions, camera_orientations
 
