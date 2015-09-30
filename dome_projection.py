@@ -44,12 +44,10 @@ class DomeProjection:
                  distance_to_screen = [0.5, 0.5, 0.5],
                  pitch = [30, 30, 30],
                  yaw = [-90, 0, 90],
-                 roll = [0, 0, 0],
                  image_pixel_height = [200, 200, 200],
                  image_pixel_width = [280, 280, 280],
                  projector_pixel_height = 720,
                  projector_pixel_width = 1280,
-
                  first_projector_image = [[-0.0865, 0.436, 0.1217],
                                           [ 0.0865, 0.436, 0.1217],
                                           [ 0.0865, 0.436, 0.0244],
@@ -58,26 +56,31 @@ class DomeProjection:
                                            [ 0.1239, 0.265, 0.1816],
                                            [ 0.1239, 0.265, 0.0421],
                                            [-0.1239, 0.265, 0.0421]],
+                 projector_roll = 0,
                  mirror_radius = 0.236,
                  dome_center = [0, 0.077, 0.413],
                  dome_radius = 0.606,
                  animal_position = [0, 0.069, 0.558]
+
                 ):
 
-#                 first_projector_image = [[-0.0797, 0.436, 0.1262],
-#                                          [ 0.0797, 0.436, 0.1262],
-#                                          [ 0.0797, 0.436, 0.0365],
-#                                          [-0.0797, 0.436, 0.0365]],
-#                 second_projector_image = [[-0.1156, 0.265, 0.1763],
-#                                           [ 0.1156, 0.265, 0.1763],
-#                                           [ 0.1156, 0.265, 0.0462],
-#                                           [-0.1156, 0.265, 0.0462]],
-#                 mirror_radius = 0.2239,
-#                 dome_center = [0, 0.1224, 0.4455],
-#                 dome_radius = 0.5672,
-#                 animal_position = [0, 0.0337, 0.5697]
-
-
+#                 probably not worth saving but don't want to waste any time
+#                 thinking about it, have to switch back to the ones we know work
+#                 pretty well so I can get some pictures for a conference poster
+#
+#                 first_projector_image = [[-0.0950, 0.436, 0.1270],
+#                                          [ 0.0950, 0.436, 0.1270],
+#                                          [ 0.0950, 0.436, 0.0201],
+#                                          [-0.0950, 0.436, 0.0201]],
+#                 second_projector_image = [[-0.1359, 0.265, 0.1875],
+#                                           [ 0.1359, 0.265, 0.1875],
+#                                           [ 0.1359, 0.265, 0.0346],
+#                                           [-0.1359, 0.265, 0.0346]],
+#                 projector_roll = 0,
+#                 mirror_radius = 0.2143,
+#                 dome_center = [0, 0.1203, 0.3021],
+#                 dome_radius = 0.6094,
+#                 animal_position = [0, 0.0295, 0.5958],
 
         """
         Parameters:
@@ -95,9 +98,6 @@ class DomeProjection:
         @param yaw:
             A list of the angles in the xy plane between each camera's viewing
             direction and the y-axis (the yaw in aeronautical terms).
-        @param roll:
-            A list of the angles of rotation of each camera image relative to
-            the xy plane (the roll in aeronautical terms).
         @param image_pixel_height:
             A list of the number of vertical pixels in each OpenGL image.
         @param image_pixel_width:
@@ -114,6 +114,10 @@ class DomeProjection:
             A list of four (x,y2,z) points, starting top left and proceeding
             clockwise, that specifies the corners of the projector's image
             at a distance y2 from the center of the mirror.
+        @param projector_roll:
+            The angle of rotation of the projector. This allows compensation
+            for small differences in the orientation of the projector relative
+            to the observer.
         @param mirror_radius:
             The radius of the mirror in arbitrary units.
         @param dome_center:
@@ -134,13 +138,13 @@ class DomeProjection:
         self._distance_to_screen = distance_to_screen
         self._pitch = [i * pi/180.0 for i in pitch]
         self._yaw = [i * pi/180.0 for i in yaw]
-        self._roll = [i * pi/180.0 for i in roll]
         self._image_pixel_height = image_pixel_height
         self._image_pixel_width = image_pixel_width
         self._projector_pixel_height = projector_pixel_height
         self._projector_pixel_width = projector_pixel_width
         self._first_projector_image = first_projector_image
         self._second_projector_image = second_projector_image
+        self._projector_roll = projector_roll
         self._mirror_radius = mirror_radius
         self._dome_center = dome_center
         self._dome_radius = dome_radius
@@ -151,7 +155,7 @@ class DomeProjection:
         #######################################################################
         # make a list of the desired directions for calibration
         self.calibration_directions = []
-        for pitch in [0, 30, 60]:
+        for pitch in [60, 30, 0]:
             for yaw in [0, 45, 90]:
                 x = sin(yaw * pi/180) * cos(pitch * pi/180)
                 y = cos(yaw * pi/180) * cos(pitch * pi/180)
@@ -181,20 +185,14 @@ class DomeProjection:
         for screen in range(len(distance_to_screen)):
             yaw = self._yaw[screen]
             pitch = self._pitch[screen]
-            roll = self._roll[screen]
             x = (distance_to_screen[screen] * sin(yaw) * cos(pitch))
             y = (distance_to_screen[screen] * cos(yaw) * cos(pitch))
             z = distance_to_screen[screen] * sin(pitch)
             self._vector_to_screen.append(array([x, y, z]))
             # Create a column vector that will be used as a basis vector to
             # find the column number of pixels in images from this camera.
-            # Supporting image rotation makes this a bit confusing.  When
-            # roll=0, the cross product is between vector_to_screen and
-            # [0, 0, 1], the unit vector in the positive z direction.
             col_vector = cross(self._vector_to_screen[screen],
-                               array([sin(roll)*cos(yaw),
-                                      sin(roll)*sin(yaw),
-                                      cos(roll)]))
+                               array([0, 0, 1]))
             col_vector = col_vector / linalg.norm(col_vector)
             self._col_vector.append(col_vector)
             # Create a row vector that will be used as a basis vector to
@@ -226,7 +224,7 @@ class DomeProjection:
         # Calculate the distance from the projector's focal point to the image.
         image_y = self._second_projector_image[0][1]
         projector_y = self._projector_focal_point[1]
-        self._projector_distance_to_image = image_y - projector_y
+        self._projector_distance_to_image = projector_y - image_y
 
         # Calculate the projector's vertical throw.
         projector_z = self._projector_focal_point[2]
@@ -300,9 +298,7 @@ class DomeProjection:
         if self._camera_view_directions == []:
             """
             Calculate the unit vectors (aka directions) that point from
-            OpenGL's virtual camera towards all of the OpenGL image pixels.
-            All vectors are relative to OpenGL's virtual camera which
-            is looking down the positive y-axis.
+            each OpenGL virtual camera towards all of the pixels in its image.
             """
             self._camera_view_directions = \
                 [flat_display_directions(self._screen_height[i],
@@ -310,7 +306,7 @@ class DomeProjection:
                                          self._image_pixel_height[i],
                                          self._image_pixel_width[i],
                                          self._distance_to_screen[i],
-                                         phi = self._pitch[i],
+                                         pitch = self._pitch[i],
                                          yaw = self._yaw[i]) 
                  for i in range(len(self._screen_height))]
 
@@ -371,16 +367,17 @@ class DomeProjection:
         """
 
         # Calculate the direction of light emanating from the projector pixel.
+        # Yaw is Pi, or 180 degrees, because projection is in -y direction.
         projector_pixel_direction = \
             flat_display_direction(row, column, self._projector_image_height,
                                    self._projector_image_width,
                                    self._projector_pixel_height,
                                    self._projector_pixel_width,
                                    self._projector_distance_to_image,
-                                   self._projector_vertical_offset)
-
-        # Flip the sign of the x-values because projection is in -y direction
-        projector_pixel_direction *= array([-1, 1, 1])
+                                   self._projector_vertical_offset,
+                                   pitch=0,
+                                   yaw=pi,
+                                   roll=self._projector_roll)
 
         """
         Complete the triangle consisting of:
@@ -950,7 +947,7 @@ class DomeProjection:
         # the desired and actual directions.
         arguments = tuple([directions])
         results = fmin_powell(self._direction_differences, pixels, args=arguments,
-                              xtol=1, disp=False)
+                              xtol=0.1, disp=False)
     
         # Sort the final results into pixels
         projector_pixels = []
@@ -986,7 +983,7 @@ def flat_display_directions(screen_height, screen_width, pixel_height,
 
 def flat_display_direction(row, column, screen_height, screen_width,
                            pixel_height, pixel_width, distance_to_screen,
-                           vertical_offset = 0, pitch = 0, yaw = 0):
+                           vertical_offset = 0, pitch = 0, yaw = 0, roll = 0):
     """
     Return a unit vector that points from the viewer towards the specified
     pixel on a flat screen display.  The display is along the positive y-axis
@@ -997,25 +994,34 @@ def flat_display_direction(row, column, screen_height, screen_width,
     angle of ratation in the x-y plane.  It is positive to the right and
     negative to the left.
     """
+    # calculate the vector to the center of the screen
+    x = distance_to_screen * sin(yaw) * cos(pitch)
+    y = distance_to_screen * cos(yaw) * cos(pitch)
+    z = distance_to_screen * sin(pitch)
+    vector_to_screen = array([x, y, z])
+    # unit vector that points in the direction of increasing column number
+    col_vector = cross(vector_to_screen,
+                       array([sin(roll)*cos(yaw),
+                              sin(roll)*sin(yaw),
+                              cos(roll)]))
+    col_vector = col_vector / linalg.norm(col_vector)
+    # unit vector that points in the direction of increasing row number
+    row_vector = cross(vector_to_screen, col_vector)
+    row_vector = row_vector / linalg.norm(row_vector)
+    # scale the column unit vector to reach the given column
+    col_vector = ((float(screen_width) / pixel_width) *
+                  (column + 0.5 - pixel_width/2.0) * col_vector)
+    # scale the row unit vector to reach the given row
+    row_vector = (float(screen_height) / pixel_height *
+                  (row + 0.5 - pixel_height/2.0) * row_vector) 
+    # build the vertical offset vector
+    offset_vector = array([0, 0, vertical_offset])
+    # build the vector to the pixel specified by row and column
+    vector_to_pixel = (vector_to_screen + row_vector + col_vector +
+                       offset_vector)
+    # normalize to get the direction
+    direction = vector_to_pixel / linalg.norm(vector_to_pixel)
 
-    x_zero_yaw_zero_pitch = (float(screen_width) / pixel_width
-                             * (column + 0.5 - pixel_width/2.0))
-    y_zero_yaw_zero_pitch = distance_to_screen
-    z_zero_yaw_zero_pitch = (float(screen_height) / pixel_height
-                             * (pixel_height/2.0 - (row + 0.5)))
-
-    x_zero_yaw = x_zero_yaw_zero_pitch
-    y_zero_yaw = (y_zero_yaw_zero_pitch * cos(pitch)
-                  - z_zero_yaw_zero_pitch * sin(pitch))
-    z_zero_yaw = (z_zero_yaw_zero_pitch * cos(pitch) 
-                  + y_zero_yaw_zero_pitch * sin(pitch))
-
-    x = x_zero_yaw * cos(yaw) + y_zero_yaw * sin(yaw)
-    y = y_zero_yaw * cos(yaw) - x_zero_yaw * sin(yaw)
-    z = z_zero_yaw + vertical_offset
-
-    r = sqrt(x**2 + y**2 + z**2)
-
-    return array([x/r, y/r, z/r])
+    return direction
 
 
