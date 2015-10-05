@@ -269,7 +269,8 @@ class DomeProjection:
                                self._projector_pixel_width, 3], dtype=uint8)
         for row in range(self._projector_pixel_height):
             for col in range(self._projector_pixel_width):
-                pixel_value = zeros(3)
+                pixel_value = zeros(3) # for a black background
+                #pixel_value = 255*ones(3) # for a white background
                 for pixel in self._contributing_pixels[row][col]:
                     pixel_value += pixels[pixel[0]][pixel[1], pixel[2]]
                 n = len(self._contributing_pixels[row][col])
