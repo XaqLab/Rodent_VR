@@ -31,8 +31,8 @@ for filepath in sys.argv[1:]:
         dome = DomeProjection(
                               screen_height = [dome_image_size[1]],
                               screen_width = [dome_image_size[0]],
-                              distance_to_screen = [dome_image_size[1]],
-                              pitch = [30],
+                              distance_to_screen = [2.5*dome_image_size[1]],
+                              pitch = [10],
                               yaw = [0],
                               image_pixel_width=[dome_image_size[0]],
                               image_pixel_height=[dome_image_size[1]],
