@@ -1,8 +1,8 @@
-from matplotlib import pyplot as plot
 from numpy import array, zeros, uint8, floor
 from numpy.linalg import norm
 from random import randint
 from PIL import Image
+import cv2
 
 # import from a relative directory
 import sys
@@ -83,6 +83,7 @@ def compare_centroids(expected, actual, tolerance):
     assert len(expected) == len(actual), \
             "Wrong number of centroids found in image!"
     for i in range(len(expected)):
+        assert norm(array(expected[i]) - array(actual[i])) < tolerance
         if norm(array(expected[i]) - array(actual[i])) > tolerance:
             print "Centroid found is not within the required tolerance!"
             print "Expected centroid:", expected[i]
@@ -222,115 +223,118 @@ def corners_to_points(corners):
     return array([[c[0, 0], c[0, 1]] for c in corners])
 
 
-"""
-Use gen_test_image to make an image containing objects with known centroids.
-Then use find_center_points to find the centroids of the objects and confirm
-that they are the same.
-"""
-required_accuracy = 1e-6
-columns = 16
-rows = 9
-test_image, expected_centroids = gen_test_image(columns, rows)
-actual_centroids = find_center_points(test_image, blur=0, remove_distortion=False)
-actual_centroids = sort_points(actual_centroids, columns, rows)
-compare_centroids(expected_centroids, actual_centroids, required_accuracy)
-print "Done with basic image find_center_points test"
-
-
-"""
-This time use cv2.findChessboardCorners on a real photograph and use the
-corners it returns to generate an image containing objects with those corners
-as centroids.  Then use find_center_points with remove_distortion=False on this
-image and compare its results to OpenCV's.
-"""
-DEBUG = False
-import cv2
-
-# load the chess board image
-camera_resolution = (camera.pixel_width, camera.pixel_height)  # (x, y)
-image = cv2.imread("tripod_closeup.jpg")
-gray_scale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-assert gray_scale_image.shape[::-1] == camera_resolution
-
-# Invert the gray scale image because findChessboardCorners requires a
-# white background.
-inverted_image = 255 - gray_scale_image
-
-# Find the chess board corners
-BOARD_SIZE = (15, 8)  # OpenCV board size, basically (cols - 1, rows - 1)
-found, corners = cv2.findChessboardCorners(inverted_image,
-                                           BOARD_SIZE,
-                                           flags=cv2.CALIB_CB_ADAPTIVE_THRESH + 
-                                           cv2.CALIB_CB_NORMALIZE_IMAGE +
-                                           cv2.CALIB_CB_ASYMMETRIC_GRID)
-expected_centroids = corners_to_points(corners)
+def test_find_center_points_on_simple_test_image():
+    """
+    Use gen_test_image to make an image containing objects with known centroids.
+    Then use find_center_points to find the centroids of the objects and confirm
+    that they are the same.
+    """
+    DEBUG = False
+    required_accuracy = 1e-6
+    columns = 16
+    rows = 9
+    test_image, expected_centroids = gen_test_image(columns, rows)
+    actual_centroids = find_center_points(test_image, blur=0, remove_distortion=False)
+    actual_centroids = sort_points(actual_centroids, columns, rows)
+    compare_centroids(expected_centroids, actual_centroids, required_accuracy)
     
-if DEBUG:
-    # Show each image with the corners drawn on
-    cv2.drawChessboardCorners(image, BOARD_SIZE, corners, found)
-    cv2.imshow('Corners', image)
-
-# Generate an image using the corners to place the objects and use
-# find_center_points to see if we get the (u, v) coordinates of corners back
-test_image = gen_image_from_corners(corners)
-center_points = find_center_points(test_image, remove_distortion=False)
-actual_centroids = sort_points(center_points, 15, 8)
-required_accuracy = 0.2
-required_accuracy = 0.1
-compare_centroids(expected_centroids, actual_centroids, required_accuracy)
-
-print "Done with photo find_center_points test"
-
-
-#sys.exit()
-
-
-"""
-This time use cv2.undistort to remove the distortion from the photograph and
-then compare its results to find_center_points with remove_distortion=True.
-"""
-# undistort the inverted_image from above and find the corners again
-
-undist_image = cv2.undistort(inverted_image, camera.matrix,
-                             camera.distortion_coefficients)
-
-# Find the chess board corners
-found, corners = cv2.findChessboardCorners(undist_image,
-                                           BOARD_SIZE,
-                                           flags=cv2.CALIB_CB_ADAPTIVE_THRESH + 
-                                           cv2.CALIB_CB_NORMALIZE_IMAGE +
-                                           cv2.CALIB_CB_ASYMMETRIC_GRID)
-expected_centroids = corners_to_points(corners)
     
-if DEBUG:
-    # Show each image with the corners drawn on
-    cv2.drawChessboardCorners(image, BOARD_SIZE, corners, found)
-    cv2.imshow('Corners', image)
-    #cv2.waitKey(500)
-
-# find the center points and remove distortion
-center_points = find_center_points(test_image, remove_distortion=True)
-actual_centroids = sort_points(center_points, 15, 8)
-
-# compare the points found in the image with corners from the chessboard
-required_accuracy = 0.7
-compare_centroids(expected_centroids, actual_centroids, required_accuracy)
-
-#for i in range(len(corners)):
-    # flip x and y to match row, column format of find_center_points
-    #target_center_pixel = array([corners[i, 0, 1], corners[i, 0, 0]])
-    #center_pixel = array(center_points[i])
-    #if norm(target_center_pixel - center_pixel) > required_accuracy:
-        #print "Unexpected pixel found!"
-        #print "Expected center pixel:", target_center_pixel
-        #print "Center pixel found:", center_pixel
-print "Done with distortion removal find_center_points test"
-
-
-
-
-"""
-test = np.zeros((10,1,2), dtype=np.float32)
-xy_undistorted = cv2.undistortPoints(test, camera_matrix, dist_coeffs)
-"""
-
+def off_test_find_center_points():
+    """
+    This time use cv2.findChessboardCorners on a real photograph and use the
+    corners it returns to generate an image containing objects with those corners
+    as centroids.  Then use find_center_points with remove_distortion=False on this
+    image and compare its results to OpenCV's.
+    """
+    DEBUG = False
+    
+    # load the chess board image
+    camera_resolution = (camera.pixel_width, camera.pixel_height)  # (x, y)
+    image = cv2.imread("tripod_closeup.jpg")
+    gray_scale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    assert gray_scale_image.shape[::-1] == camera_resolution
+    
+    # Invert the gray scale image because findChessboardCorners requires a
+    # white background.
+    inverted_image = 255 - gray_scale_image
+    
+    # Find the chess board corners
+    BOARD_SIZE = (15, 8)  # OpenCV board size, basically (cols - 1, rows - 1)
+    found, corners = cv2.findChessboardCorners(inverted_image,
+                                               BOARD_SIZE,
+                                               flags=cv2.CALIB_CB_ADAPTIVE_THRESH + 
+                                               cv2.CALIB_CB_NORMALIZE_IMAGE +
+                                               cv2.CALIB_CB_ASYMMETRIC_GRID)
+    expected_centroids = corners_to_points(corners)
+        
+    if DEBUG:
+        # Show each image with the corners drawn on
+        cv2.drawChessboardCorners(image, BOARD_SIZE, corners, found)
+        cv2.imshow('Corners', image)
+    
+    # Generate an image using the corners to place the objects and use
+    # find_center_points to see if we get the (u, v) coordinates of corners back
+    test_image = gen_image_from_corners(corners)
+    center_points = find_center_points(test_image, remove_distortion=False)
+    actual_centroids = sort_points(center_points, 15, 8)
+    required_accuracy = 0.2
+    #required_accuracy = 0.1
+    compare_centroids(expected_centroids, actual_centroids, required_accuracy)
+    
+    print "Done with photo find_center_points test"
+    
+    
+    #sys.exit()
+    
+    
+def off_test_find_center_points2():
+    """
+    This time use cv2.undistort to remove the distortion from the photograph and
+    then compare its results to find_center_points with remove_distortion=True.
+    """
+    DEBUG = False
+    # undistort the inverted_image from above and find the corners again
+    
+    undist_image = cv2.undistort(inverted_image, camera.matrix,
+                                 camera.distortion_coefficients)
+    
+    # Find the chess board corners
+    found, corners = cv2.findChessboardCorners(undist_image,
+                                               BOARD_SIZE,
+                                               flags=cv2.CALIB_CB_ADAPTIVE_THRESH + 
+                                               cv2.CALIB_CB_NORMALIZE_IMAGE +
+                                               cv2.CALIB_CB_ASYMMETRIC_GRID)
+    expected_centroids = corners_to_points(corners)
+        
+    if DEBUG:
+        # Show each image with the corners drawn on
+        cv2.drawChessboardCorners(image, BOARD_SIZE, corners, found)
+        cv2.imshow('Corners', image)
+        #cv2.waitKey(500)
+    
+    # find the center points and remove distortion
+    center_points = find_center_points(test_image, remove_distortion=True)
+    actual_centroids = sort_points(center_points, 15, 8)
+    
+    # compare the points found in the image with corners from the chessboard
+    required_accuracy = 0.7
+    compare_centroids(expected_centroids, actual_centroids, required_accuracy)
+    
+    #for i in range(len(corners)):
+        # flip x and y to match row, column format of find_center_points
+        #target_center_pixel = array([corners[i, 0, 1], corners[i, 0, 0]])
+        #center_pixel = array(center_points[i])
+        #if norm(target_center_pixel - center_pixel) > required_accuracy:
+            #print "Unexpected pixel found!"
+            #print "Expected center pixel:", target_center_pixel
+            #print "Center pixel found:", center_pixel
+    print "Done with distortion removal find_center_points test"
+    
+    
+    
+    
+    """
+    test = np.zeros((10,1,2), dtype=np.float32)
+    xy_undistorted = cv2.undistortPoints(test, camera_matrix, dist_coeffs)
+    """
+    
