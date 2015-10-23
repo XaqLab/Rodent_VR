@@ -52,10 +52,10 @@ class DomeProjection:
                                           [ 0.0865, 0.436, 0.1217],
                                           [ 0.0865, 0.436, 0.0244],
                                           [-0.0865, 0.436, 0.0244]],
-                 second_projector_image = [[-0.1239, 0.265, 0.1816],
-                                           [ 0.1239, 0.265, 0.1816],
-                                           [ 0.1239, 0.265, 0.0421],
-                                           [-0.1239, 0.265, 0.0421]],
+                 second_projector_image = [[-0.1439, 0.265, 0.1816],
+                                           [ 0.1439, 0.265, 0.1816],
+                                           [ 0.1439, 0.265, 0.0421],
+                                           [-0.1439, 0.265, 0.0421]],
                  projector_roll = 0,
                  mirror_radius = 0.236,
                  dome_center = [0, 0.077, 0.413],
@@ -64,6 +64,16 @@ class DomeProjection:
 
                 ):
 
+# Saving these before I try to modify the frustum to get all calibration points
+# to show up in the projector image produced by domecal.py
+#                 first_projector_image = [[-0.0865, 0.436, 0.1217],
+#                                          [ 0.0865, 0.436, 0.1217],
+#                                          [ 0.0865, 0.436, 0.0244],
+#                                          [-0.0865, 0.436, 0.0244]],
+#                 second_projector_image = [[-0.1239, 0.265, 0.1816],
+#                                           [ 0.1239, 0.265, 0.1816],
+#                                           [ 0.1239, 0.265, 0.0421],
+#                                           [-0.1239, 0.265, 0.0421]],
 #                 probably not worth saving but don't want to waste any time
 #                 thinking about it, have to switch back to the ones we know work
 #                 pretty well so I can get some pictures for a conference poster
@@ -155,8 +165,8 @@ class DomeProjection:
         #######################################################################
         # make a list of the desired directions for calibration
         self.calibration_directions = []
-        for pitch in [60, 30, 0]:
-            for yaw in [0, 45, 90]:
+        for pitch in [-15, 0, 30, 60, 90]:
+            for yaw in [-120, -90, -60, -30, 0, 30, 60, 90, 120]:
                 x = sin(yaw * pi/180) * cos(pitch * pi/180)
                 y = cos(yaw * pi/180) * cos(pitch * pi/180)
                 z = sin(pitch * pi/180)
@@ -1024,5 +1034,45 @@ def flat_display_direction(row, column, screen_height, screen_width,
     direction = vector_to_pixel / linalg.norm(vector_to_pixel)
 
     return direction
+
+
+
+###############################################################################
+# Functions called by dome_calibration.py and domecal.py
+###############################################################################
+
+def calc_projector_images(y, z, theta, vertical_offset):
+    """
+    Calculate the two projector_image parameters that the dome class requires
+    from a smaller set of parameters that are more parameter estimation
+    friendly. The location of the projector's focal point is given by y and z.
+    Theta is half the angle between lines from the focal point to the left and
+    right sides of the image.  The lens offset of the projector is described by
+    vertical_offset.
+    """
+    # distance to first image, chosen to match measurements
+    y1 = 0.436
+    # calculate x from theta and the distance between the focal point and image
+    x1 = (y - y1) * tan(theta)
+    # calculate z by assuming a 16:9 aspect ratio 
+    z1_low = vertical_offset
+    z1_high = z1_low + 2 * 9.0/16.0 * x1
+    image1 = [[ -x1,  y1,  z1_high ],
+              [  x1,  y1,  z1_high ],
+              [  x1,  y1,  z1_low ],
+              [ -x1,  y1,  z1_low ]]
+
+    # do it again for image2
+    y2 = 0.265
+    x2 = (y - y2) * tan(theta)
+    slope = (vertical_offset - z) / (y - y1)
+    z2_low = z + slope * (y - y2)
+    z2_high = z2_low + 2 * 9.0/16.0 * x2
+    image2 = [[ -x2,  y2,  z2_high ],
+              [  x2,  y2,  z2_high ],
+              [  x2,  y2,  z2_low ],
+              [ -x2,  y2,  z2_low ]]
+    
+    return [image1, image2]
 
 

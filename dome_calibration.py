@@ -39,6 +39,7 @@ import cv2
 # import stuff for our projector setup and web camera
 from dome_projection import DomeProjection
 from dome_projection import flat_display_direction
+from dome_projection import calc_projector_images
 import foscam_FI9821P as camera
 
 # define constants
@@ -430,41 +431,6 @@ def calc_viewing_directions(photo_pixels, parameters):
     bottom_row = viewing_directions[0:3]
     viewing_directions = top_row + middle_row + bottom_row
     return viewing_directions
-
-
-def calc_projector_images(y, z, theta, vertical_offset):
-    """
-    Calculate the two projector_image parameters that the dome class requires
-    from a smaller set of parameters that are more parameter estimation
-    friendly. The location of the projector's focal point is given by y and z.
-    Theta is half the angle between lines from the focal point to the left and
-    right sides of the image.  The lens offset of the projector is described by
-    vertical_offset.
-    """
-    # distance to first image, chosen to match measurements
-    y1 = 0.436
-    # calculate x from theta and the distance between the focal point and image
-    x1 = (y - y1) * tan(theta)
-    # calculate z by assuming a 16:9 aspect ratio 
-    z1_low = vertical_offset
-    z1_high = z1_low + 2 * 9.0/16.0 * x1
-    image1 = [[ -x1,  y1,  z1_high ],
-              [  x1,  y1,  z1_high ],
-              [  x1,  y1,  z1_low ],
-              [ -x1,  y1,  z1_low ]]
-
-    # do it again for image2
-    y2 = 0.265
-    x2 = (y - y2) * tan(theta)
-    slope = (vertical_offset - z) / (y - y1)
-    z2_low = z + slope * (y - y2)
-    z2_high = z2_low + 2 * 9.0/16.0 * x2
-    image2 = [[ -x2,  y2,  z2_high ],
-              [  x2,  y2,  z2_high ],
-              [  x2,  y2,  z2_low ],
-              [ -x2,  y2,  z2_low ]]
-    
-    return [image1, image2]
 
 
 def calc_frustum_parameters(image1, image2):
