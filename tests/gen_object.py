@@ -1,18 +1,50 @@
 from matplotlib import pyplot as plot
-from numpy import array, zeros, uint8, floor, histogram, arange, copy
+from numpy import array, zeros, uint8, floor, histogram, arange, copy, mean
 from numpy.linalg import norm
-from random import randint
+from random import randint, randrange
+
+
+def neighbors(pixel):
+    """ return a list of the pixels that share a border with this one """
+    x, y = pixel
+    #neighbors = [[x - 1, y + 1], [x, y + 1], [x + 1, y + 1],
+    #             [x - 1, y],                 [x + 1, y],
+    #             [x - 1, y - 1], [x, y - 1], [x + 1, y - 1]]
+    neighbors = [                [x, y + 1],
+                 [x - 1, y],                 [x + 1, y],
+                                 [x, y - 1]]
+    return neighbors
 
 
 class PixelObject():
     """ Define a class to enforce the constraint that the object consist of
     contiguous image pixels. """
-    def __init__(first_pixel):
-        """ initialize the list of pixels that the object contains and the list
-        of pixels that are eligible to be added to the object """
+    def __init__(self, first_pixel):
+        """ initialize the list of pixels that the object contains and the
+        lists of pixels that are addable """
         self.pixels = [first_pixel]
-        x, y = first_pixel
-        self.eligible = neighbors(first_pixel)
+        self.addables = neighbors(first_pixel)
+        self.removables = []
+
+
+    def copy(self):
+        """ return a copy of this pixel object """
+        new_object = PixelObject([0, 0])
+        new_object.pixels = list(self.pixels)
+        new_object.addables = list(self.addables)
+        return new_object
+
+
+    def show(self):
+        """ make an image of this pixel object """
+        from PIL import Image
+        x, y = self.centroid()
+        pixels = zeros([2*floor(y), 2*floor(x)], dtype=uint8)
+        for pixel in self.pixels:
+            x, y = pixel
+            pixels[y, x] = 255
+        image = Image.fromarray(pixels, mode='L')
+        image.show()
 
 
     def centroid(self):
@@ -23,63 +55,130 @@ class PixelObject():
         return x, y
 
 
+    def neighbors_in_object(self, pixel):
+        """ determine the neighbors of a pixel that are part of the object """
+        neighbors_in_object = []
+        for neighbor in neighbors(pixel):
+            if neighbor in self.pixels:
+                neighbors_in_object.append(neighbor)
+        return neighbors_in_object
+
+
+    def addable(self, pixel):
+        """ determine if a pixel can be added to the object """
+        if pixel in self.pixels:
+            # pixel is already part of the object
+            addable = False
+        elif len(self.neighbors_in_object(pixel)) == 0:
+            # pixel has no neighbor in the object
+            addable = False
+        else:
+            addable = True
+        return addable
+
+
+    def removable(self, pixel):
+        """ determine if a pixel can be removed from the object """
+        removable = False
+        if pixel not in self.pixels:
+            removable = False
+        elif len(self.neighbors_in_object(pixel)) == 1:
+            # pixels with only one neighbor in the object can always be removed
+            removable = True
+        elif len(self.neighbors_in_object(pixel)) == 2:
+            # pixels with two neighbors in the object can be removed if its
+            # neighbors are still connected after removal
+            neighbor0 = self.neighbors_in_object(pixel)[0]
+            neighbors_of_neighbor0 = self.neighbors_in_object(neighbor0)
+            neighbors_of_neighbor0.pop(neighbors_of_neighbor0.index(pixel))
+            neighbor1 = self.neighbors_in_object(pixel)[1]
+            neighbors_of_neighbor1 = self.neighbors_in_object(neighbor1)
+            neighbors_of_neighbor1.pop(neighbors_of_neighbor1.index(pixel))
+            for neighbor in neighbors_of_neighbor0:
+                if neighbor in neighbors_of_neighbor1:
+                    removable = True
+        return removable
+
+
     def add_pixel(self, pixel):
-        """ add an eligible pixel to the object """
-        if pixel in self.eligible:
-            # add this pixel to the object
+        """ add an addable pixel to the object """
+        if pixel in self.addables:
+            # add this pixel to the list of pixels in the object
             self.pixels.append(pixel)
-            # remove this pixel from the eligible list
-            self.eligible.pop(pixel)
-            # add the neighbors of this pixel to the eligible list if they are
-            # not yet on it
+            # add this pixel to the list of removable pixels
+            self.removables.append(pixel)
+            # remove this pixel from the list of addable pixels
+            self.addables.pop(self.addables.index(pixel))
+            # update the addables and removables lists
             for neighbor in neighbors(pixel):
-                if neighbor not in self.eligible:
-                    self.eligible.append(neighbor)
+                if self.addable(neighbor) and pixel not in self.addables:
+                    self.addables.append(neighbor)
+                if self.removable(neighbor) and pixel not in self.removables:
+                    self.removables.append(neighbor)
+            pixel_added = True
+        else:
+            pixel_added = False
+        return pixel_added
 
 
-def gen_object(centroid, width, tolerance=1e-6):
-    """ Find a distribution of pixels over columns and rows that has the
-    given centroid.  Assume a solution of the form (for width=2):
-        x = (a1*floor(x) + a2*(floor(x) + 1))/(a1 + a2)
-        y = (b1*floor(y) + b2*(floor(y) + 1))/(b1 + b2)
-        a1 + a2 = b1 + b2
+    def remove_pixel(self, pixel):
+        """ remove a pixel from the object """
+        if self.removable(pixel):
+            # remove this pixel from the object
+            self.pixels.pop(self.pixels.index(pixel))
+            # add this pixel to the addables list
+            self.addables.append(pixel)
+            # update the addables and removables lists
+            for neighbor in neighbors(pixel):
+                if neighbor in self.addables and not self.addable(neighbor):
+                    self.addables.pop(self.addables.index(neighbor))
+                if neighbor in self.removables and not self.removable(neighbor):
+                    self.removables.pop(self.removables.index(neighbor))
+            pixel_removed = True
+        else:
+            pixel_removed = False
+        return pixel_removed
 
-    So I'm approximating floating point numbers by a weighted average of
-    integers that have values close to them.
+
+def gen_object(centroid, tolerance=1e-6):
+    """ Generate an object with a centroid that is within the tolerance
+    distance of the given centroid, or die trying.
     """
     x = centroid[0]
     y = centroid[1]
-    x_integers = array(range(width)) - (width - 1)/2 + floor(x)
-    y_integers = array(range(width)) - (width - 1)/2 + floor(y)
-    x_weights = array(x_integers == floor(x), dtype='int')
-    y_weights = array(y_integers == floor(y), dtype='int')
-    x_value = sum(x_weights*x_integers)/float(sum(x_weights))
-    y_value = sum(y_weights*y_integers)/float(sum(y_weights))
-    difference = norm(centroid - array(x_value, y_value))
-    # try different weights to minimize the difference between the true
-    # centroid and our approximation
-    new_x_weights = copy(x_weights)
-    new_y_weights = copy(y_weights)
+    obj = PixelObject([floor(x), floor(y)])
+    difference = norm(centroid - obj.centroid())
+    # try adding and removing pixels to minimize the difference between the
+    # given centroid and the centroid of our pixel object
     iteratiions = 1
-    while iteratiions < 1000 and difference > tolerance:
+    while iteratiions < 10000 and difference > tolerance:
         iteratiions = iteratiions + 1
-        for i in range(len(x_weights)):
-            # pick a random set of weights that is consistent with an actual
-            # image, i.e.  sum(new_x_weights) = sum(new_y_weights)
-            new_x_weights[i] = randint(1, width)
-            new_y_weights[i] = randint(1, width)
-
-
-
-            new_x_value = sum(new_x_weights*x_integers)/float(sum(new_x_weights))
-            new_diff = abs(x - new_value)
-            if new_diff < difference:
-                x_weights = copy(new_x_weights)
-                y_weights = copy(new_y_weights)
-                difference = new_diff
-    #import pdb; pdb.set_trace()
+        new_obj = obj.copy()
+        # add or remove some pixels
+        num_pixels = randint(1 - len(new_obj.removables), 10)
+        if num_pixels >= 0:
+            # add num_pixel + 1 pixels so 0 doesn't go to waste
+            for i in range(num_pixels + 1):
+                # add a random pixel
+                j = randrange(len(new_obj.addables))
+                new_obj.add_pixel(new_obj.addables[j])
+                new_diff = norm(centroid - new_obj.centroid())
+                if new_diff < difference:
+                    obj = new_obj.copy()
+                    difference = new_diff
+        else:
+            for i in range(-num_pixels):
+                # remove a random pixel
+                j = randrange(len(new_obj.removables))
+                new_obj.remove_pixel(new_obj.removables[j])
+                new_diff = norm(centroid - new_obj.centroid())
+                if new_diff < difference:
+                    obj = new_obj.copy()
+                    difference = new_diff
     print iteratiions
-    return x_weights, x_integers, difference
+    print difference
+    #import pdb; pdb.set_trace()
+    return obj
 
 
 def random_numbers():

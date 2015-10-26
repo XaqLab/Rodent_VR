@@ -20,7 +20,7 @@ import sys
 sys.path.append("..") # in case this file is run from .
 sys.path.append(".")  # in case this file is run from ..
 from dome_calibration import camera_orientation_error
-from dome_calibration import find_viewing_direction
+from dome_calibration import calc_viewing_direction
 from dome_calibration import calc_distance_to_dome
 from dome_calibration import rotate
 import foscam_FI9821P as camera
@@ -111,7 +111,7 @@ def test_camera_orientation_error():
         [x, y, z] = known_direction
         known_pitch = arcsin(z)
         known_yaw = arctan2(x, y)
-        apparent_direction = find_viewing_direction(lower_left_point,
+        apparent_direction = calc_viewing_direction(lower_left_point,
                                                     array([0, 1, 0]),
                                                     parameters)
         [x, y, z] = apparent_direction
@@ -143,9 +143,9 @@ def test_camera_orientation_error():
             print "Camera direction   ", camera_direction
             print "Estimated direction", estimated_direction
             print "Viewing direction using camera direction:   ",
-            print find_viewing_direction(lower_left_point, camera_direction,
+            print calc_viewing_direction(lower_left_point, camera_direction,
                                          parameters)
             print "Viewing direction using estimated direction:",
-            print find_viewing_direction(lower_left_point, estimated_direction,
+            print calc_viewing_direction(lower_left_point, estimated_direction,
                                          parameters)
     

@@ -1,10 +1,10 @@
 """
-This is the unit test for find_viewing_direction which calculates the direction
+This is the unit test for calc_viewing_direction which calculates the direction
 from the animal's location to a spot on the dome given the camera's direction
 and the pixel coordinates of the spot in a photo taken with the camera.
 Calls to this function look like this:
 
-find_viewing_direction(photo_pixel, camera_direction, parameters)
+calc_viewing_direction(photo_pixel, camera_direction, parameters)
 
 where parameters is a dictionary that contains entries for animal_position,
 dome_radius and dome_center.
@@ -17,20 +17,20 @@ import random
 import sys
 sys.path.append("..") # in case this file is run from .
 sys.path.append(".")  # in case this file is run from ..
-from dome_calibration import find_viewing_direction
+from dome_calibration import calc_viewing_direction
 from dome_calibration import calc_distance_to_dome
 from dome_calibration import rotate
 import foscam_FI9821P as camera
 
 
-def test_find_viewing_direction():
+def test_calc_viewing_direction():
     """ Pick a random camera orientation, then pick a point on the dome inside
     the camera's field of view.  Calculate the location of the camera's
     optical center and the direction from it to the point on the dome.  Use
     this direction along with the camera's orientation to find the direction
     relative to the camera's optical axis.  Use this relative direction and
     the camera's calibration matrix to calculate the point's pixel coordinates.
-    Call find_viewing_direction and compare its results to the easily
+    Call calc_viewing_direction and compare its results to the easily
     calculated direction from the animal's location the point on the dome. """
     
     DEBUG = False
@@ -107,7 +107,7 @@ def test_find_viewing_direction():
         if DEBUG:
             print
             print photo_point
-        result = find_viewing_direction(photo_point, camera_direction, parameters)
+        result = calc_viewing_direction(photo_point, camera_direction, parameters)
         assert norm(result - expected_result) < required_accuracy
         if DEBUG:
             print "Expected result:", expected_result
