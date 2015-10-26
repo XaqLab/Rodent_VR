@@ -165,12 +165,14 @@ class DomeProjection:
         #######################################################################
         # make a list of the desired directions for calibration
         self.calibration_directions = []
-        for pitch in [-15, 0, 30, 60, 90]:
+        for pitch in [-15, 0, 30, 60]:
             for yaw in [-120, -90, -60, -30, 0, 30, 60, 90, 120]:
                 x = sin(yaw * pi/180) * cos(pitch * pi/180)
                 y = cos(yaw * pi/180) * cos(pitch * pi/180)
                 z = sin(pitch * pi/180)
                 self.calibration_directions.append([x, y, z])
+        # add straight up
+        self.calibration_directions.append([0, 0, 1])
     
         #######################################################################
         # Properties used to share results between method calls
@@ -949,16 +951,25 @@ class DomeProjection:
         Search the projector pixels to find the pixels that minimize the square
         differences between the desired directions and the actual directions.
         """
-        if not pixels:
-            # no pixel values provided, guess pixels that hit the mirror
-            pixels = [self._projector_pixel_height - 1,
-                      self._projector_pixel_width/2]*len(directions)
-
-        # Find the projector pixels by minimizing the difference between
-        # the desired and actual directions.
         arguments = tuple([directions])
-        results = fmin_powell(self._direction_differences, pixels, args=arguments,
-                              xtol=0.1, disp=False)
+        if pixels:
+            # flatten pixels to make x0 for fmin_powell
+            x0 = [coordinate for pixel in pixels for coordinate in pixel]
+            # We have estimates of the pixel values so use loose
+            # tolerances to get the result faster.
+            results = fmin_powell(self._direction_differences, x0,
+                                  args=arguments, xtol=0.1, ftol=1.0,
+                                  disp=False, full_output=1)
+        else:
+            # no pixel values provided, guess pixels that hit the mirror
+            x0 = [self._projector_pixel_height - 1,
+                  self._projector_pixel_width/2]*len(directions)
+            # We don't have estimates of the pixel values so use tighter
+            # tolerances to get an accurate result.
+            results = fmin_powell(self._direction_differences, x0,
+                                  args=arguments, disp=False, full_output=1)
+
+        results = results[0]
     
         # Sort the final results into pixels
         projector_pixels = []
