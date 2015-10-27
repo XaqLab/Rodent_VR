@@ -229,7 +229,6 @@ def test_find_center_points_on_simple_test_image():
     Then use find_center_points to find the centroids of the objects and confirm
     that they are the same.
     """
-    DEBUG = False
     required_accuracy = 1e-6
     columns = 16
     rows = 9

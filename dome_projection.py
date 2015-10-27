@@ -38,6 +38,9 @@ class DomeProjection:
     all vectors in the dome display setup are relative to the center of the
     hemispherical mirror.
     """
+#projector_position = [0, 0.069, 0.558]
+#def calc_projector_images(y, z, theta, vertical_offset):
+#[0.69369163763066199, -0.0022733449477351855, 0.32385433810918979, 0.0244]
     def __init__(self,
                  screen_height = [1.0, 1.0, 1.0],
                  screen_width = [1.4, 1.4, 1.4],
@@ -48,6 +51,9 @@ class DomeProjection:
                  image_pixel_width = [280, 280, 280],
                  projector_pixel_height = 720,
                  projector_pixel_width = 1280,
+
+
+
                  first_projector_image = [[-0.0865, 0.436, 0.1217],
                                           [ 0.0865, 0.436, 0.1217],
                                           [ 0.0865, 0.436, 0.0244],
@@ -1047,7 +1053,6 @@ def flat_display_direction(row, column, screen_height, screen_width,
     return direction
 
 
-
 ###############################################################################
 # Functions called by dome_calibration.py and domecal.py
 ###############################################################################
@@ -1085,5 +1090,34 @@ def calc_projector_images(y, z, theta, vertical_offset):
               [ -x2,  y2,  z2_low ]]
     
     return [image1, image2]
+
+
+def calc_frustum_parameters(image1, image2):
+    """
+    Inverse of calc_projector_images.
+    This funciton calculates the y and z coordinates of the projector's focal
+    point along with it's horizontal field of view, and it's vertical throw.
+    This is done to reduce the degrees of freedom to the minimum necessary for
+    parameter estimation using SciPy's minimization routine.
+    """
+    # this one is easy
+    vertical_offset = image1[2][2]
+
+    # calculate theta
+    x1 = image1[1][0]
+    x2 = image2[1][0]
+    y1 = image1[1][1]
+    y2 = image2[1][1]
+    theta = arctan((x2 - x1) / (y1 - y2))
+
+    # calculate y
+    y = y1 + x1 / tan(theta)
+
+    # calculate z
+    z2_low = image2[2][2]
+    slope = (vertical_offset - z2_low) / (y1 - y2)
+    z = vertical_offset + slope * (y - y1)
+    
+    return [y, z, theta, vertical_offset]
 
 

@@ -4,7 +4,7 @@ from the animal's location to a spot on the dome given the camera's direction
 and the pixel coordinates of the spot in a photo taken with the camera.
 Calls to this function look like this:
 
-calc_viewing_direction(photo_pixel, camera_direction, parameters)
+calc_viewing_direction(photo_point, camera_direction, parameters)
 
 where parameters is a dictionary that contains entries for animal_position,
 dome_radius and dome_center.
