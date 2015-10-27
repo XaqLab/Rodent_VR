@@ -226,15 +226,10 @@ def calc_viewing_direction(photo_point, camera_direction, parameters):
     # camera orientation
     point_vector = rotate(point_vector, array([camera_pitch - pi/2, 0, 0]))
     point_vector = rotate(point_vector, array([0, 0, -camera_yaw]))
-    #rotation_vector = array([-pi/2, 0, 0])
-    #rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
-    #point_vector = rotation_matrix.dot(point_vector)
     point_direction = point_vector / norm(point_vector)
     [x, y, z] = point_direction
     point_pitch = arcsin(z)
     point_yaw = arctan2(x, y)
-    #print "Point pitch:", 180/pi*point_pitch
-    #print "Point yaw:", 180/pi*point_yaw
     distance_to_dome = calc_distance_to_dome(parameters,
                                              camera_focal_point,
                                              point_direction)
@@ -249,10 +244,10 @@ def calc_viewing_direction(photo_point, camera_direction, parameters):
     return viewing_direction
 
 
-def camera_orientation_error(orientation, lower_left_pixel, known_direction,
+def camera_orientation_error(orientation, lower_left_point, known_direction,
                              parameters):
     """
-    Calculate the pitch and yaw of lower_left_pixel and compare it to the
+    Calculate the pitch and yaw of lower_left_point and compare it to the
     pitch and yaw of known_direction.  The camera orientation is correct when
     they are the same.
     """
@@ -260,7 +255,7 @@ def camera_orientation_error(orientation, lower_left_pixel, known_direction,
     camera_direction = array([cos(camera_pitch)*sin(camera_yaw),
                               cos(camera_pitch)*cos(camera_yaw),
                               sin(camera_pitch)])
-    viewing_direction = calc_viewing_direction(lower_left_pixel,
+    viewing_direction = calc_viewing_direction(lower_left_point,
                                                camera_direction,
                                                parameters)
     """
@@ -378,7 +373,7 @@ def calc_viewing_directions(photo_points, parameters):
     return viewing_directions
 
 
-def dome_distortion(x, projector_points, photo_pixels):
+def dome_distortion(x, projector_points, photo_points):
     # debug stuff
     global previous_parameters
     global best_sum_of_errors
@@ -390,7 +385,7 @@ def dome_distortion(x, projector_points, photo_pixels):
     # there are 9 spots in the calibration image
     assert len(projector_points) == 9
     # 4 overlapping photos are taken, each containing 4 spots
-    assert len(photo_pixels) == 4
+    assert len(photo_points) == 4
     """ decode x into meaningful names and setup the parameters dictionary """
     projector_y = x[0]
     projector_z = x[1]
@@ -429,12 +424,12 @@ def dome_distortion(x, projector_points, photo_pixels):
     previous_parameters = dict(parameters)
 
     """
-    Find the actual viewing directions using photo_pixels and the estimated
+    Find the actual viewing directions using photo_points and the estimated
     parameters.  Because the orientation of the camera is unknown,
     determination of the actual viewing directions depends on the estimates
     of the animal's position, the dome position and the dome radius.
     """
-    actual_directions = calc_viewing_directions(photo_pixels, parameters)
+    actual_directions = calc_viewing_directions(photo_points, parameters)
     """
     Calculate the viewing directions for projector_points using these
     parameter estimates.
@@ -481,7 +476,7 @@ if __name__ == "__main__":
         """
         print "Usage:"
         print
-        print sys.argv[0], "pixel_list.txt pic1 pic2 pic3 pic4"
+        print sys.argv[0], "centroid_list.txt pic1 pic2 pic3 pic4"
         print
         print "the picture order is: upper left, upper right,",
         print "lower left, lower right"
@@ -489,18 +484,20 @@ if __name__ == "__main__":
     else:
         """
         Calculate the dome projection parameters.  The first argument is the
-        name of a file containing the list of projector pixels upon which the
-        spots in the calibration image are centered.  The second through
-        fifth arguments are the file names of the calibration photos.
+        name of a file containing the list of centroids for the spots in the
+        projected calibration image.  The second through fifth arguments are
+        the file names of the calibration photos.
         """
         centroid_filename = sys.argv[1]
         photo_filenames = sys.argv[2:]
         """
-        Read the list of projector pixels from the file specified by the first
+        Read the list of points from the file specified by the first
         argument.  These pixels are used to calculate viewing directions using
         the parameter estimates.
         """
-        projector_points = read_centroid_list(centroid_filename)
+        centroids = read_centroid_list(centroid_filename)
+        # convert centroids (row, col) to (u,v) coordinates
+        projector_points = [[c[1] + 0.5, c[0] + 0.5] for c in centroids]
         """
         Find the center points of the light colored spots in the calibration
         photos and compensate for the radial distortion of the camera.  These
