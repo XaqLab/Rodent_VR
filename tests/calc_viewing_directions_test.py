@@ -6,11 +6,11 @@ left, upper right, lower left, and lower right.  The spots on the dome are in a
 3 by 3 grid so some of the spots appear in more than one photo.
 Calls to this function look like this:
 
-calc_viewing_directions(photo_pixels, parameters)
+calc_viewing_directions(photo_points, parameters)
 
-photo_pixels is a list of four lists which contain the pixel coordinates
-for each calibration photo in this order: top left, top right, bottom left,
-bottom right
+photo_points is a list of four lists which contain the (u,v) coordinates for
+the centers of the four spots in each calibration photo.  The lists are in this
+order: top left photo, top right photo, bottom left photo, bottom right photo
 
 parameters is a dictionary that contains entries for animal_position,
 dome_radius and dome_center.
@@ -82,83 +82,83 @@ class CalibrationPoint():
 
 
     def move_to_upper_left(self, photo, parameters):
-        col, row = photo.pixel(self, parameters)
-        while col < 0:
+        u, v = photo.point(self, parameters)
+        while u < 0:
             # move the point right
             self.move_right(parameters)
-            col, row = photo.pixel(self, parameters)
-        while col > 0.25*camera.pixel_width:
+            u, v = photo.point(self, parameters)
+        while u > 0.25*camera.pixel_width:
             # move the point left
             self.move_left(parameters)
-            col, row = photo.pixel(self, parameters)
-        while row < 0:
+            u, v = photo.point(self, parameters)
+        while v < 0:
             # move the point down
             self.move_down(parameters)
-            col, row = photo.pixel(self, parameters)
-        while row > 0.25*camera.pixel_height:
+            u, v = photo.point(self, parameters)
+        while v > 0.25*camera.pixel_height:
             # move the point up
             self.move_up(parameters)
-            col, row = photo.pixel(self, parameters)
+            u, v = photo.point(self, parameters)
 
 
     def move_to_upper_right(self, photo, parameters):
-        col, row = photo.pixel(self, parameters)
-        while col < 0.75*camera.pixel_width:
+        u, v = photo.point(self, parameters)
+        while u < 0.75*camera.pixel_width:
             # move the point right
             self.move_right(parameters)
-            col, row = photo.pixel(self, parameters)
-        while col > camera.pixel_width:
+            u, v = photo.point(self, parameters)
+        while u > camera.pixel_width:
             # move the point left
             self.move_left(parameters)
-            col, row = photo.pixel(self, parameters)
-        while row < 0:
+            u, v = photo.point(self, parameters)
+        while v < 0:
             # move the point down
             self.move_down(parameters)
-            col, row = photo.pixel(self, parameters)
-        while row > 0.25*camera.pixel_height:
+            u, v = photo.point(self, parameters)
+        while v > 0.25*camera.pixel_height:
             # move the point up
             self.move_up(parameters)
-            col, row = photo.pixel(self, parameters)
+            u, v = photo.point(self, parameters)
 
 
     def move_to_lower_left(self, photo, parameters):
-        col, row = photo.pixel(self, parameters)
-        while col < 0:
+        u, v = photo.point(self, parameters)
+        while u < 0:
             # move the point right
             self.move_right(parameters)
-            col, row = photo.pixel(self, parameters)
-        while col > 0.25*camera.pixel_width:
+            u, v = photo.point(self, parameters)
+        while u > 0.25*camera.pixel_width:
             # move the point left
             self.move_left(parameters)
-            col, row = photo.pixel(self, parameters)
-        while row < 0.75*camera.pixel_height:
+            u, v = photo.point(self, parameters)
+        while v < 0.75*camera.pixel_height:
             # move the point down
             self.move_down(parameters)
-            col, row = photo.pixel(self, parameters)
-        while row > camera.pixel_height:
+            u, v = photo.point(self, parameters)
+        while v > camera.pixel_height:
             # move the point up
             self.move_up(parameters)
-            col, row = photo.pixel(self, parameters)
+            u, v = photo.point(self, parameters)
 
 
     def move_to_lower_right(self, photo, parameters):
-        col, row = photo.pixel(self, parameters)
-        while col < 0.75*camera.pixel_width:
+        u, v = photo.point(self, parameters)
+        while u < 0.75*camera.pixel_width:
             # move the point right
             self.move_right(parameters)
-            col, row = photo.pixel(self, parameters)
-        while col > camera.pixel_width:
+            u, v = photo.point(self, parameters)
+        while u > camera.pixel_width:
             # move the point left
             self.move_left(parameters)
-            col, row = photo.pixel(self, parameters)
-        while row < 0.75*camera.pixel_height:
+            u, v = photo.point(self, parameters)
+        while v < 0.75*camera.pixel_height:
             # move the point down
             self.move_down(parameters)
-            col, row = photo.pixel(self, parameters)
-        while row > camera.pixel_height:
+            u, v = photo.point(self, parameters)
+        while v > camera.pixel_height:
             # move the point up
             self.move_up(parameters)
-            col, row = photo.pixel(self, parameters)
+            u, v = photo.point(self, parameters)
 
 
 class CalibrationPoints():
@@ -225,83 +225,83 @@ class CameraOrientation():
 
 
     def move_to_upper_left(self, point, parameters):
-        col, row = self.pixel(point, parameters)
-        while col < 0:
+        u, v = self.point(point, parameters)
+        while u < 0:
             # rotate the camera left
             self.decrease_yaw()
-            col, row = self.pixel(point, parameters)
-        while col > 0.25*camera.pixel_width:
+            u, v = self.point(point, parameters)
+        while u > 0.25*camera.pixel_width:
             # rotate the camera right
             self.increase_yaw()
-            col, row = self.pixel(point, parameters)
-        while row < 0:
+            u, v = self.point(point, parameters)
+        while v < 0:
             # rotate the camera up
             self.increase_pitch()
-            col, row = self.pixel(point, parameters)
-        while row > 0.25*camera.pixel_height:
+            u, v = self.point(point, parameters)
+        while v > 0.25*camera.pixel_height:
             # rotate the camera down
             self.decrease_pitch()
-            col, row = self.pixel(point, parameters)
+            u, v = self.point(point, parameters)
 
 
     def move_to_upper_right(self, point, parameters):
-        col, row = self.pixel(point, parameters)
-        while col < 0.75*camera.pixel_width:
+        u, v = self.point(point, parameters)
+        while u < 0.75*camera.pixel_width:
             # rotate the camera left
             self.decrease_yaw()
-            col, row = self.pixel(point, parameters)
-        while col > camera.pixel_width:
+            u, v = self.point(point, parameters)
+        while u > camera.pixel_width:
             # rotate the camera right
             self.increase_yaw()
-            col, row = self.pixel(point, parameters)
-        while row < 0:
+            u, v = self.point(point, parameters)
+        while v < 0:
             # rotate the camera up
             self.increase_pitch()
-            col, row = self.pixel(point, parameters)
-        while row > 0.25*camera.pixel_height:
+            u, v = self.point(point, parameters)
+        while v > 0.25*camera.pixel_height:
             # rotate the camera down
             self.decrease_pitch()
-            col, row = self.pixel(point, parameters)
+            u, v = self.point(point, parameters)
 
 
     def move_to_lower_left(self, point, parameters):
-        col, row = self.pixel(point, parameters)
-        while col < 0:
+        u, v = self.point(point, parameters)
+        while u < 0:
             # rotate the camera left
             self.decrease_yaw()
-            col, row = self.pixel(point, parameters)
-        while col > 0.25*camera.pixel_width:
+            u, v = self.point(point, parameters)
+        while u > 0.25*camera.pixel_width:
             # rotate the camera right
             self.increase_yaw()
-            col, row = self.pixel(point, parameters)
-        while row < 0.75*camera.pixel_height:
+            u, v = self.point(point, parameters)
+        while v < 0.75*camera.pixel_height:
             # rotate the camera up
             self.increase_pitch()
-            col, row = self.pixel(point, parameters)
-        while row > camera.pixel_height:
+            u, v = self.point(point, parameters)
+        while v > camera.pixel_height:
             # rotate the camera down
             self.decrease_pitch()
-            col, row = self.pixel(point, parameters)
+            u, v = self.point(point, parameters)
 
 
     def move_to_lower_right(self, point, parameters):
-        col, row = self.pixel(point, parameters)
-        while col < 0.75*camera.pixel_width:
+        u, v = self.point(point, parameters)
+        while u < 0.75*camera.pixel_width:
             # rotate the camera left
             self.decrease_yaw()
-            col, row = self.pixel(point, parameters)
-        while col > camera.pixel_width:
+            u, v = self.point(point, parameters)
+        while u > camera.pixel_width:
             # rotate the camera right
             self.increase_yaw()
-            col, row = self.pixel(point, parameters)
-        while row < 0.75*camera.pixel_height:
+            u, v = self.point(point, parameters)
+        while v < 0.75*camera.pixel_height:
             # rotate the camera up
             self.increase_pitch()
-            col, row = self.pixel(point, parameters)
-        while row > camera.pixel_height:
+            u, v = self.point(point, parameters)
+        while v > camera.pixel_height:
             # rotate the camera down
             self.decrease_pitch()
-            col, row = self.pixel(point, parameters)
+            u, v = self.point(point, parameters)
 
 
     def calc_opencv_unit_vectors(self):
@@ -326,7 +326,7 @@ class CameraOrientation():
         return -reference_vector
 
 
-    def pixel(self, point_on_dome, parameters):
+    def point(self, point_on_dome, parameters):
         """ return the (u, v) coordinates of point_on_dome when
         photographed with the camera in this orientation """
         # calculate vector from camera's optical center to point_on_dome
@@ -338,11 +338,11 @@ class CameraOrientation():
         camera_to_dome = rotate(camera_to_dome, yaw_rotation_vector)
         pitch_rotation_vector = (pi/2 - self.pitch) * array([1.0, 0.0, 0.0])
         camera_to_dome = rotate(camera_to_dome, pitch_rotation_vector)
-        # use camera.matrix to calculate the pixel coordinates
-        pixel_vector = camera.matrix.dot(camera_to_dome)
-        u, v, w = pixel_vector
-        pixel = array([u, v]) / w
-        return pixel
+        # use camera.matrix to calculate the point's coordinates
+        point_vector = camera.matrix.dot(camera_to_dome)
+        u, v, w = point_vector
+        point = array([u, v]) / w
+        return point
 
 
 class CameraOrientations():
@@ -355,80 +355,80 @@ class CameraOrientations():
         self.lower_right = CameraOrientation()
 
 
-def generate_directions_and_pixels(parameters):
-    """ Generate photo_pixels argument to test calc_viewing_directions.
-    The arrangement of the points on the dome looks like this:
+def generate_directions_and_points(parameters):
+    """ Generate photo_points argument to test calc_viewing_directions.
+    The arrangement of the spots on the dome looks like this:
         upper_left          upper           upper_right 
         left                center          right
         lower_left          lower           lower_right """
     DEBUG = False
 
     photos = CameraOrientations()
-    points = CalibrationPoints(parameters)
+    spots = CalibrationPoints(parameters)
     """ Find an orientation for the lower_left photo """
     # adjust the camera orientation for the lower left photo until the 0 pitch,
     # 0 yaw point is in the lower left quadrant
-    photos.lower_left.move_to_lower_left(points.lower_left, parameters)
+    photos.lower_left.move_to_lower_left(spots.lower_left, parameters)
     """ Find a position for the center calibration point """
     # adjust the position of the center calibration point until it's in the
     # upper right quadrant of the lower left photo
-    points.center.move_to_upper_right(photos.lower_left, parameters)
+    spots.center.move_to_upper_right(photos.lower_left, parameters)
     """ Find an orientation for the upper_left photo """
     # adjust the camera orientation for the upper left photo until the center
     # point is in the lower right quadrant
-    photos.upper_left.move_to_lower_right(points.center, parameters)
+    photos.upper_left.move_to_lower_right(spots.center, parameters)
     """ Find an orientation for the upper_right photo """
     # adjust the camera orientation for the upper right photo until the center
     # point is in the lower left quadrant
-    photos.upper_right.move_to_lower_left(points.center, parameters)
+    photos.upper_right.move_to_lower_left(spots.center, parameters)
     """ Find an orientation for the lower_right photo """
     # adjust the camera orientation for the lower right photo until the center
     # point is in the upper left quadrant
-    photos.lower_right.move_to_upper_left(points.center, parameters)
+    photos.lower_right.move_to_upper_left(spots.center, parameters)
     """ Find a position for the upper_left calibration point """
     # adjust the position of the upper_left calibration point until it's in the
     # upper left quadrant of the upper left photo
-    points.upper_left.move_to_upper_left(photos.upper_left, parameters)
+    spots.upper_left.move_to_upper_left(photos.upper_left, parameters)
     """ Find a position for the upper calibration point """
     # adjust the position of the upper calibration point until it's in the
     # upper right quadrant of the upper left photo
-    points.upper.move_to_upper_right(photos.upper_left, parameters)
+    spots.upper.move_to_upper_right(photos.upper_left, parameters)
     # adjust the position of the upper calibration point until it's in the
     # upper left quadrant of the upper right photo
-    points.upper.move_to_upper_left(photos.upper_right, parameters)
+    spots.upper.move_to_upper_left(photos.upper_right, parameters)
     """ Find a position for the upper_right calibration point """
     # adjust the position of the upper_right calibration point until it's in
     # the upper right quadrant of the upper right photo
-    points.upper_right.move_to_upper_right(photos.upper_right, parameters)
+    spots.upper_right.move_to_upper_right(photos.upper_right, parameters)
     """ Find a position for the left calibration point """
     # adjust the position of the left calibration point until it's in the
     # lower left quadrant of the upper left photo
-    points.left.move_to_lower_left(photos.upper_left, parameters)
+    spots.left.move_to_lower_left(photos.upper_left, parameters)
     # adjust the position of the left calibration point until it's in the
     # upper left quadrant of the lower left photo
-    points.left.move_to_upper_left(photos.lower_left, parameters)
+    spots.left.move_to_upper_left(photos.lower_left, parameters)
     """ Find a position for the right calibration point """
     # adjust the position of the right calibration point until it's in the
     # lower right quadrant of the upper right photo
-    points.right.move_to_lower_right(photos.upper_right, parameters)
+    spots.right.move_to_lower_right(photos.upper_right, parameters)
     # adjust the position of the right calibration point until it's in the
     # upper right quadrant of the lower right photo
-    points.right.move_to_upper_right(photos.lower_right, parameters)
+    spots.right.move_to_upper_right(photos.lower_right, parameters)
     """ Find a position for the lower_left calibration point """
     # adjust the position of the lower_left calibration point until it's in the
     # lower left quadrant of the lower left photo
-    points.lower_left.move_to_lower_left(photos.lower_left, parameters)
+    spots.lower_left.move_to_lower_left(photos.lower_left, parameters)
     """ Find a position for the lower calibration point """
     # adjust the position of the lower calibration point until it's in the
     # lower right quadrant of the lower left photo
-    points.lower.move_to_lower_right(photos.lower_left, parameters)
+    spots.lower.move_to_lower_right(photos.lower_left, parameters)
     # adjust the position of the lower calibration point until it's in the
     # lower left quadrant of the lower right photo
-    points.lower.move_to_lower_left(photos.lower_right, parameters)
+    spots.lower.move_to_lower_left(photos.lower_right, parameters)
     """ Find a position for the lower_right calibration point """
     # adjust the position of the lower_right calibration point until it's in
     # the lower right quadrant of the lower right photo
-    points.lower_right.move_to_lower_right(photos.lower_right, parameters)
+    spots.lower_right.move_to_lower_right(photos.lower_right, parameters)
     if DEBUG:
         print "Camera Orientations, left to right, top to bottom"
         print 180/pi*photos.upper_left.pitch, 180/pi*photos.upper_left.yaw
@@ -437,61 +437,61 @@ def generate_directions_and_pixels(parameters):
         print 180/pi*photos.lower_right.pitch, 180/pi*photos.lower_right.yaw
     """ Calculate the viewing direction for each point """
     animal_position = parameters['animal_position']
-    upper_left = points.upper_left.point - animal_position
+    upper_left = spots.upper_left.point - animal_position
     upper_left = upper_left / norm(upper_left)
-    upper = points.upper.point - animal_position
+    upper = spots.upper.point - animal_position
     upper = upper / norm(upper)
-    upper_right = points.upper_right.point - animal_position
+    upper_right = spots.upper_right.point - animal_position
     upper_right = upper_right / norm(upper_right)
-    left = points.left.point - animal_position
+    left = spots.left.point - animal_position
     left = left / norm(left)
-    center = points.center.point - animal_position
+    center = spots.center.point - animal_position
     center = center / norm(center)
-    right = points.right.point - animal_position
+    right = spots.right.point - animal_position
     right = right / norm(right)
-    lower_left = points.lower_left.point - animal_position
+    lower_left = spots.lower_left.point - animal_position
     lower_left = lower_left / norm(lower_left)
-    lower = points.lower.point - animal_position
+    lower = spots.lower.point - animal_position
     lower = lower / norm(lower)
-    lower_right = points.lower_right.point - animal_position
+    lower_right = spots.lower_right.point - animal_position
     lower_right = lower_right / norm(lower_right)
     directions = [upper_left,  upper, upper_right,
                         left, center,       right,
                   lower_left,  lower, lower_right]
-    """ Calculate the pixel coordinates for each photo """
+    """ Calculate the point coordinates for each photo """
     upper_left_photo = \
-            [photos.upper_left.pixel(points.upper_left, parameters),
-             photos.upper_left.pixel(points.upper, parameters),
-             photos.upper_left.pixel(points.left, parameters),
-             photos.upper_left.pixel(points.center, parameters)];
+            [photos.upper_left.point(spots.upper_left, parameters),
+             photos.upper_left.point(spots.upper, parameters),
+             photos.upper_left.point(spots.left, parameters),
+             photos.upper_left.point(spots.center, parameters)];
     upper_right_photo = \
-            [photos.upper_right.pixel(points.upper, parameters),
-             photos.upper_right.pixel(points.upper_right, parameters),
-             photos.upper_right.pixel(points.center, parameters),
-             photos.upper_right.pixel(points.right, parameters)];
+            [photos.upper_right.point(spots.upper, parameters),
+             photos.upper_right.point(spots.upper_right, parameters),
+             photos.upper_right.point(spots.center, parameters),
+             photos.upper_right.point(spots.right, parameters)];
     lower_left_photo = \
-            [photos.lower_left.pixel(points.left, parameters),
-             photos.lower_left.pixel(points.center, parameters),
-             photos.lower_left.pixel(points.lower_left, parameters),
-             photos.lower_left.pixel(points.lower, parameters)];
+            [photos.lower_left.point(spots.left, parameters),
+             photos.lower_left.point(spots.center, parameters),
+             photos.lower_left.point(spots.lower_left, parameters),
+             photos.lower_left.point(spots.lower, parameters)];
     lower_right_photo = \
-            [photos.lower_right.pixel(points.center, parameters),
-             photos.lower_right.pixel(points.right, parameters),
-             photos.lower_right.pixel(points.lower, parameters),
-             photos.lower_right.pixel(points.lower_right, parameters)];
-    photo_pixels = [upper_left_photo, upper_right_photo,
+            [photos.lower_right.point(spots.center, parameters),
+             photos.lower_right.point(spots.right, parameters),
+             photos.lower_right.point(spots.lower, parameters),
+             photos.lower_right.point(spots.lower_right, parameters)];
+    photo_points = [upper_left_photo, upper_right_photo,
                     lower_left_photo, lower_right_photo];
-    return directions, photo_pixels
+    return directions, photo_points
 
 
-def show_calibration_photo(pixel_list):
+def show_calibration_photo(point_list):
     """ for debugging purposes """
     pixels = zeros([camera.pixel_height, camera.pixel_width], dtype=uint8)
-    for pixel in pixel_list:
-        u, v = pixel
-        u = int(round(u))
-        v = int(round(v))
-        pixels[v,u] = 255
+    for point in point_list:
+        u, v = point
+        row = int(round(v))
+        col = int(round(u))
+        pixels[row,col] = 255
         image = Image.fromarray(pixels, mode='L')
     image.show()
 
@@ -510,8 +510,8 @@ def test_calc_viewing_directions():
     Then add 7 more points and move each around until it's in the correct
     quadrant of one or more photos.
 
-    Finally find the pixel coordinates of the four points in each of the four
-    calibration photos and pass them (as photo_pixels) to
+    Finally find the (u, v) coordinates of the four points in each of the four
+    calibration photos and pass them (as photo_points) to
     calc_viewing_directions to confirm that it calculates the correct viewing
     directions.
     """
@@ -537,9 +537,9 @@ def test_calc_viewing_directions():
         parameters = dict(animal_position = animal_position,
                           dome_center = center,
                           dome_radius = radius)
-        # generate viewing directions and photo pixels that are consistent with the
+        # generate viewing directions and photo points that are consistent with the
         # camera calibration parameters
-        expected_result, photo_pixels = generate_directions_and_pixels(parameters)
+        expected_result, photo_points = generate_directions_and_points(parameters)
         if DEBUG:
             for r in expected_result:
                 x, y, z = r
@@ -547,13 +547,13 @@ def test_calc_viewing_directions():
                 yaw = 180/pi*arctan2(x,y)
                 print r, pitch, yaw
             print
-            for photo in photo_pixels:
-                for pixel in photo:
-                    print pixel
+            for photo in photo_points:
+                for point in photo:
+                    print point
                 print
                 show_calibration_photo(photo)
         # see what calc_viewing_directions gives us
-        result = calc_viewing_directions(photo_pixels, parameters)
+        result = calc_viewing_directions(photo_points, parameters)
         for i in range(len(expected_result)):
             assert norm(result[i] - expected_result[i]) < required_accuracy
             if DEBUG:

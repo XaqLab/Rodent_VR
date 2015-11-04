@@ -32,13 +32,19 @@ right.
 import sys
 from PIL import Image
 from numpy import pi, sin, cos, tan, arcsin, arccos, arctan, arctan2
-from numpy import array, uint8, dot, linalg, sqrt, float32, cross
+from numpy import array, uint8, dot, linalg, sqrt, float32, cross, zeros
 from numpy.linalg import norm, inv
 from scipy.optimize import minimize, fsolve
+from scipy.optimize import fmin_l_bfgs_b
+from scipy.optimize import fmin_slsqp
+from scipy.optimize import fmin_powell
+from scipy.optimize import basinhopping
+from scipy.optimize import differential_evolution
 from scipy import ndimage
 import cv2
 
-# import stuff for our projector setup and web camera
+# import stuff for our projector setup and calibration camera
+from dome_projection import MissedTheMirror
 from dome_projection import DomeProjection
 from dome_projection import flat_display_direction
 from dome_projection import calc_projector_images
@@ -65,11 +71,16 @@ best_parameters = None
 best_sum_of_errors = 100
 
 
+class InvalidParameters(Exception):
+    def __init__(self):
+         self.value = "Invalid Parameters!"
+    def __str__(self):
+        return repr(self.value)
+
+
 def read_centroid_list(filename):
-    """
-    Read the list of centroids for the light colored spots in the
-    calibration image from a file saved using domecal.exe.
-    """
+    """ Read the list of centroids for the light colored spots in the
+    calibration image from a file saved using domecal.exe.  """
     try:
         centroid_file = open(filename, 'r')
         centroid_list = []
@@ -88,9 +99,7 @@ def read_centroid_list(filename):
 
 
 def column_vector(vector):
-    """
-    take a list or array and make sure it's in column vector format for Open CV
-    """
+    """ make sure a list or array is in column vector format for Open CV """
     shape = array(vector).shape
     assert len(shape) < 3, "Input vector must have less than three dimensions."
     if len(shape) > 1:
@@ -106,11 +115,9 @@ def column_vector(vector):
 
 
 def find_center_points(image, blur=2, remove_distortion=True):
-    """
-    This function returns a list of center points belonging to the light
+    """ This function returns a list of center points belonging to the light
     colored spots in a grey scale camera photo.  The spots are distinguished
-    from the darker background using a pixel value threshold.
-    """
+    from the darker background using a pixel value threshold.  """
     #image.show()
     pixels = array(image)
     
@@ -168,12 +175,11 @@ def rotate(vector, rotation_vector):
 
 
 def calc_distance_to_dome(parameters, position, direction):
-    """
-    Find the distance from a position inside the dome to the dome in the given
-    direction.  This boils down to completing a triangle, in which the length
-    of one side is unknown, using the law of cosines. This gives a quadratic
-    equation for the unknown length and this equation is solved and the
-    positive root is taken.  If both roots are imaginary the line does not
+    """ Find the distance from a position inside the dome to the dome in the
+    given direction.  This boils down to completing a triangle, in which the
+    length of one side is unknown, using the law of cosines. This gives a
+    quadratic equation for the unknown length and this equation is solved and
+    the positive root is taken.  If both roots are imaginary the line does not
     intersect the dome.  This should be prevented by judicious choice of 
     parameter bounds.
     """
@@ -192,18 +198,16 @@ def calc_distance_to_dome(parameters, position, direction):
     b = -2*linalg.norm(position_to_dome_center)*cos(theta)
     c = linalg.norm(position_to_dome_center)**2 - dome_radius**2
     if b**2 - 4*a*c < 0:
-        # no solution, start debugger to see what's going on
-        import pdb; pdb.set_trace()
+        # no solution with these parameter values so raise an exception
+        raise InvalidParameters()
     d = sqrt(b**2 - 4*a*c)
     r = max([(-b + d) / (2*a), (-b - d) / (2*a)])
     return r
 
 
 def calc_viewing_direction(photo_point, camera_direction, parameters):
-    """
-    Calculate the animal's viewing direction to a point in a photo given the
-    point's (u, v) coordinates and the camera orientation.
-    """
+    """ Calculate the animal's viewing direction to a point in a photo given
+    the point's (u, v) coordinates and the camera orientation.  """
     # find the camera's coordinate system in terms of the dome coordinate
     # system
     ccz = camera_direction
@@ -246,11 +250,9 @@ def calc_viewing_direction(photo_point, camera_direction, parameters):
 
 def camera_orientation_error(orientation, lower_left_point, known_direction,
                              parameters):
-    """
-    Calculate the pitch and yaw of lower_left_point and compare it to the
+    """ Calculate the pitch and yaw of lower_left_point and compare it to the
     pitch and yaw of known_direction.  The camera orientation is correct when
-    they are the same.
-    """
+    they are the same.  """
     camera_pitch, camera_yaw = orientation
     camera_direction = array([cos(camera_pitch)*sin(camera_yaw),
                               cos(camera_pitch)*cos(camera_yaw),
@@ -265,10 +267,8 @@ def camera_orientation_error(orientation, lower_left_point, known_direction,
     
 
 def calc_viewing_directions(photo_points, parameters):
-    """
-    Calculate the viewing directions to the light colored spots in the
-    calibration photos.  
-    """
+    """ Calculate the viewing directions to the light colored spots in the
+    calibration photos.  """
     [upper_left, upper_right, lower_left, lower_right] = photo_points
     middle_u = camera.pixel_width/2
     middle_v = camera.pixel_height/2
@@ -373,107 +373,213 @@ def calc_viewing_directions(photo_points, parameters):
     return viewing_directions
 
 
-def dome_distortion(x, projector_points, photo_points):
-    # debug stuff
-    global previous_parameters
-    global best_sum_of_errors
-    global best_parameters
-    """
-    Calculate the sum of the square differences between the actual and
-    estimated viewing directions.
-    """
-    # there are 9 spots in the calibration image
-    assert len(projector_points) == 9
-    # 4 overlapping photos are taken, each containing 4 spots
-    assert len(photo_points) == 4
+def print_parameters(parameters):
+    """ print out the parameters that are being estimated """
+    print "Projector y:", parameters['projector_focal_point'][1]
+    print "Projector z:", parameters['projector_focal_point'][2]
+    print "Projector theta:", parameters['projector_theta']
+    print "Projector vertical offset:", parameters['projector_vertical_offset']
+    print "Projector roll:", parameters['projector_roll']
+    print "Mirror radius:", parameters['mirror_radius']
+    print "Dome y-coordinate:", parameters['dome_center'][1]
+    print "Dome z-coordinate:", parameters['dome_center'][2]
+    print "Dome radius:", parameters['dome_radius']
+    print "Animal y-coordinate:", parameters['animal_position'][1]
+    print "Animal z-coordinate:", parameters['animal_position'][2]
+
+
+def parameters_to_x(parameters):
+    """ convert a parameters dictionary to an array for minimization """
+    x = (parameters['projector_focal_point'][1],
+         parameters['projector_focal_point'][2],
+         parameters['projector_roll'],
+         parameters['mirror_radius'],
+         parameters['dome_center'][1],
+         parameters['dome_center'][2],
+         parameters['dome_radius'],
+         parameters['animal_position'][1],
+         parameters['animal_position'][2],
+         parameters['projector_theta'],
+         parameters['projector_vertical_offset'])
+    return x
+
+
+def x_to_parameters(x):
     """ decode x into meaningful names and setup the parameters dictionary """
     projector_y = x[0]
     projector_z = x[1]
-    projector_theta = x[2]
-    vertical_offset = x[3]
-    projector_images = calc_projector_images(projector_y, projector_z,
-                                             projector_theta, vertical_offset)
-    projector_roll = x[4]
-    mirror_radius = x[5]
-    dome_y = x[6]
-    dome_z = x[7]
-    dome_radius = x[8]
-    animal_y = x[9]
-    animal_z = x[10]
+    projector_roll = x[2]
+    mirror_radius = x[3]
+    dome_y = x[4]
+    dome_z = x[5]
+    dome_radius = x[6]
+    animal_y = x[7]
+    animal_z = x[8]
+    projector_theta = x[9]
+    projector_vertical_offset = x[10]
     parameters = dict(image_pixel_width = [1280],
                       image_pixel_height = [720],
                       projector_pixel_width = 1280,
                       projector_pixel_height = 720,
-                      first_projector_image = projector_images[0],
-                      second_projector_image = projector_images[1],
+                      projector_focal_point = [0, projector_y, projector_z],
+                      projector_theta = projector_theta,
+                      projector_vertical_offset = projector_vertical_offset,
                       projector_roll = projector_roll,
                       mirror_radius = mirror_radius,
                       dome_center = [0, dome_y, dome_z],
                       dome_radius = dome_radius,
                       animal_position = [0, animal_y, animal_z])
+    return parameters
+    
+
+def dome_distortion(x, photo_points, projector_points):
+    """ Calculate the sum of the L2 norm of the difference vectors between the
+    actual and estimated viewing directions.  """
+    # debug stuff
+    global previous_parameters
+    global best_sum_of_errors
+    global best_parameters
+    # there are 9 spots in the calibration image
+    assert len(projector_points) == 9
+    # 4 overlapping photos are taken, each containing 4 spots
+    assert len(photo_points) == 4
+    """ convert x into the parameters dictionary """
+    parameters = x_to_parameters(x)
 
     if previous_parameters:
         print
-        print "Parameters that changed"
-        for parameter in parameters:
-            if parameters[parameter] != previous_parameters[parameter]:
-                print parameter
-                print previous_parameters[parameter]
-                print parameters[parameter]
+        print "Parameters"
+        print_parameters(parameters)
         print
     previous_parameters = dict(parameters)
 
-    """
-    Find the actual viewing directions using photo_points and the estimated
-    parameters.  Because the orientation of the camera is unknown,
-    determination of the actual viewing directions depends on the estimates
-    of the animal's position, the dome position and the dome radius.
-    """
-    actual_directions = calc_viewing_directions(photo_points, parameters)
-    """
-    Calculate the viewing directions for projector_points using these
-    parameter estimates.
-    """
-    dome = DomeProjection(**parameters)
-    estimated_directions = [dome.dome_display_direction(point[0], point[1])[1]
-                            for point in projector_points]
-    """
-    Calculate the length of the difference between each measured direction and
-    it's corresponding calculated direction.  Return the sum of these
-    differences.
-    """
-    sum_of_errors = 0
-    print "[actual pitch, actual yaw], [estimated pitch, estimated yaw]"
-    for i, actual_direction in enumerate(actual_directions):
-        [x, y, z] = actual_direction
-        yaw = 180/pi*arctan2(x, y)
-        pitch = 180/pi*arcsin(z)
-        print "[%f, %f]," % (pitch, yaw),
-        error = linalg.norm(actual_direction - estimated_directions[i])
-        sum_of_errors = sum_of_errors + error
-        [x, y, z] = estimated_directions[i]
-        yaw = 180/pi*arctan2(x, y)
-        pitch = 180/pi*arcsin(z)
-        print "[%f, %f]" % (pitch, yaw)
+    try:
+        """
+        Find the actual viewing directions using photo_points and the estimated
+        parameters.  Because the orientation of the camera is unknown,
+        determination of the actual viewing directions depends on the estimates
+        of the animal's position, the dome position and the dome radius.
+        """
+        actual_directions = calc_viewing_directions(photo_points, parameters)
+        """
+        Calculate the viewing directions for projector_points using these
+        parameter estimates.
+        """
+        dome = DomeProjection(**parameters)
+        estimated_directions = [zeros(3)]*len(actual_directions)
+        for i in range(len(projector_points)):
+            try:
+                direction = dome.dome_display_direction(*projector_points[i])
+                estimated_directions[i] = direction
+            except MissedTheMirror:
+                # For each point that fails to hit the mirror, set its
+                # estimated viewing direction to the opposite of the actual
+                # direction.  This will produce the worst possible result for
+                # these points.
+                estimated_directions[i] = -1*array(actual_directions[i])
+        """
+        Calculate the length of the difference between each measured direction
+        and it's corresponding calculated direction.  Return the sum of these
+        differences.
+        """
+        sum_of_errors = 0
+        print "[actual pitch, actual yaw], [estimated pitch, estimated yaw],",
+        print "estimated - actual"
+        for i, actual_direction in enumerate(actual_directions):
+            [x, y, z] = actual_direction
+            yaw = 180/pi*arctan2(x, y)
+            pitch = 180/pi*arcsin(z)
+            print "[%6.3f, %6.3f]," % (pitch, yaw),
+            error = linalg.norm(actual_direction - estimated_directions[i])
+            sum_of_errors = sum_of_errors + error
+            [x, y, z] = estimated_directions[i]
+            est_yaw = 180/pi*arctan2(x, y)
+            est_pitch = 180/pi*arcsin(z)
+            print "[%6.3f, %6.3f]," % (est_pitch, est_yaw),
+            print "[%6.3f, %6.3f]" % (est_pitch - pitch, est_yaw - yaw)
+    
+    except InvalidParameters:
+        # Catch cases where the optimization routine tries some invalid
+        # parameter values.  Usually this means the animal location is outside
+        # the dome.  Return the max sum of errors to discourage this.
+        sum_of_errors = 2*len(projector_points)
 
     print
     print "Sum of errors:", sum_of_errors
     if sum_of_errors < best_sum_of_errors:
         best_sum_of_errors = sum_of_errors
         best_parameters = dict(parameters)
-    #import pdb; pdb.set_trace()
     return sum_of_errors
+
+
+def estimate_parameters(photo_points, projector_points):
+        """
+        Search the parameter space to find values that minimize the square
+        differences between the measured directions, found using photo_points,
+        and the calculated directions.
+        """
+        # Setup initial values of the parameters
+        dome = DomeProjection()
+        parameters = dome.get_parameters()
+        x0 = parameters_to_x(parameters)
+
+        # Make sure mirror radius and dome radius are > 0, and limit the
+        # animal's z-coordinate to keep it inside the dome
+        x_bounds = [(0.5, 1.0),    # projector y-coordinate
+                    (-0.1, 0.1),   # projector z-coordinate
+                    (-0.1, 0.1),   # projector roll
+                    (0.2, 0.3),    # mirror radius
+                    (0.0, 0.2),    # dome y-coordinate
+                    (0.2, 0.5),    # dome z-coordinate
+                    (0.5, 0.7),    # dome radius
+                    (-0.1, 0.15),  # animal position y-coordinate
+                    (0.5, 0.6),    # animal position z-coordinate
+                    (0.1, 0.4),    # projector theta
+                    (0.01, 0.06)]  # projector vertical offset
+
+        # Estimate parameter values by minimizing the difference between
+        # the measured and calculated directions.
+        arguments = (photo_points, projector_points)
+
+        #results = basinhopping(dome_distortion, x0, niter=100, T=0.1,
+                               #stepsize=0.005,
+                               #minimizer_kwargs={'args':arguments},
+                               #take_step=None, accept_test=None,
+                               #callback=None, interval=50, disp=True,
+                               #niter_success=None)
+
+        #results = fmin_slsqp(dome_distortion, x0, args=arguments,
+                             #bounds=x_bounds, acc=1e-6,
+                             #full_output=True) # 0.003
+
+        #results = minimize(dome_distortion, x0, args=arguments,
+                           #method='TNC', bounds=x_bounds)
+                           #method='Nelder-Mead') # 0.04
+                           #method='L-BFGS-B', bounds=x_bounds)
+        #results = fmin_l_bfgs_b(dome_distortion, x0, args=arguments, m=100,
+                                #bounds=x_bounds, approx_grad=True, factr=1e0)
+        results = fmin_l_bfgs_b(dome_distortion, x0, args=arguments,
+                                bounds=x_bounds, approx_grad=True)
+        print results
+
+        # convert results into parameter dictionary
+        try:
+            # if results is a dictionary
+            parameters = x_to_parameters(results['x'])
+        except TypeError:
+            # if results is a list
+            parameters = x_to_parameters(results[0])
+        return parameters
 
 
 ###############################################################################
 # Main program starts here
 ###############################################################################
 if __name__ == "__main__":
-
+    """ Script was called from the command line so look for the arguments
+    required to calculate the dome projection geometry """
     if len(sys.argv) != 6:
-        """
-        Wrong number of arguments, display usage message
-        """
+        """ Wrong number of arguments, display usage message """
         print "Usage:"
         print
         print sys.argv[0], "centroid_list.txt pic1 pic2 pic3 pic4"
@@ -482,12 +588,10 @@ if __name__ == "__main__":
         print "lower left, lower right"
 
     else:
-        """
-        Calculate the dome projection parameters.  The first argument is the
-        name of a file containing the list of centroids for the spots in the
-        projected calibration image.  The second through fifth arguments are
-        the file names of the calibration photos.
-        """
+        """ Calculate the dome projection parameters.  The first argument is
+        the name of a file containing the list of centroids for the spots in
+        the projected calibration image.  The second through fifth arguments
+        are the file names of the calibration photos.  """
         centroid_filename = sys.argv[1]
         photo_filenames = sys.argv[2:]
         """
@@ -495,14 +599,15 @@ if __name__ == "__main__":
         argument.  These pixels are used to calculate viewing directions using
         the parameter estimates.
         """
-        centroids = read_centroid_list(centroid_filename)
-        # convert centroids (row, col) to (u,v) coordinates
-        projector_points = [[c[1] + 0.5, c[0] + 0.5] for c in centroids]
+        projector_centroids = read_centroid_list(centroid_filename)
+        # convert (row, col) centroids to (u, v) points
+        projector_points = [[c[1] + 0.5, c[0] + 0.5]
+                            for c in projector_centroids]
         """
         Find the center points of the light colored spots in the calibration
         photos and compensate for the radial distortion of the camera.  These
         points are used to find the actual viewing directions for the projector
-        pixels in projector_points.
+        points in projector_points.
         """
         # Find the center points of the spots in the calibration photos.
         photo_points = []
@@ -512,116 +617,11 @@ if __name__ == "__main__":
             photo.close()
             photo_points.append(points)
 
-        """
-        Search the parameter space to find values that minimize the square
-        differences between the measured directions and calculated directions.
-        """
-        # Setup initial values of the parameters
-        first_projector_image = [[-0.080, 0.436, 0.137],
-                                 [0.080, 0.436, 0.137],
-                                 [0.080, 0.436, 0.043],
-                                 [-0.080, 0.436, 0.043]]
-        second_projector_image = [[-0.115, 0.265, 0.186],
-                                  [0.115, 0.265, 0.186],
-                                  [0.115, 0.265, 0.054],
-                                  [-0.115, 0.265, 0.054]]
-        projector_roll = 0
-        mirror_radius = 0.215
-        dome_center = [0, 0.138, 0.309]
-        dome_radius = 0.603
-        animal_position = [0, 0.06, 0.61]
-        
-        x0 = (calc_frustum_parameters(first_projector_image,
-                                      second_projector_image) + 
-              [projector_roll,
-               mirror_radius,
-               dome_center[1],
-               dome_center[2],
-               dome_radius,
-               animal_position[1],
-               animal_position[2]])
-
-        # Make sure mirror radius and dome radii are > 0, and limit the
-        # animal's z-coordinate to keep it inside the dome
-        parameter_bounds = [(None, None),
-                            (None, None),
-                            (None, None),
-                            (None, None),
-                            (None, None),
-                            (0, None),
-                            (None, None),
-                            (None, None),
-                            (0, None),
-                            (None, None),
-                            (None, 0.6)]
-
-        # Estimate parameter values by minimizing the difference between
-        # the measured and calculated directions.
-        arguments = (projector_points, photo_points)
-        results = minimize(dome_distortion, x0, args=arguments,
-                           method='L-BFGS-B', bounds=parameter_bounds)
-        print results
-
-        # Sort results into meaningful parameter names
-        projector_y = results['x'][0]
-        projector_z = results['x'][1]
-        projector_theta = results['x'][2]
-        vertical_offset = results['x'][3]
-        projector_images = calc_projector_images(projector_y,
-                                                 projector_z,
-                                                 projector_theta,
-                                                 vertical_offset)
-        projector_roll = results['x'][4]
-        mirror_radius = results['x'][5]
-        dome_y = results['x'][6]
-        dome_z = results['x'][7]
-        dome_radius = results['x'][8]
-        animal_y = results['x'][9]
-        animal_z = results['x'][10]
+        # search the parameter space to minimize differeces between measured
+        # and calculated directions
+        parameters = estimate_parameters(photo_points, projector_points)
 
         # Print out the estimated parameter values
-        for image in projector_images:
-            for row in image:
-                print row
-        print "Projector roll:", projector_roll
-        print "Mirror radius:", mirror_radius
-        print "Dome y-coordinate:", dome_y
-        print "Dome z-coordinate:", dome_z
-        print "Dome radius:", dome_radius
-        print "Animal y-coordinate:", animal_y
-        print "Animal z-coordinate:", animal_z
-
-
-        exit() 
-
-
-        # Instantiate DomeProjection class with the estimated parameters and
-        # warp a test image to see how it looks.
-        #test_image = Image.open("test_images/WebCameras/Image42.jpg")
-        test_image = Image.open("test_images/512_by_512/vertical_lines_16.png")
-
-                              #screen_height=[screen_height],
-                              #screen_width=[screen_width],
-                              #distance_to_screen=[distance_to_screen],
-        dome = DomeProjection(
-                              screen_height = [1, 1, 1],
-                              screen_width = [1, 1, 1],
-                              distance_to_screen = [0.5, 0.5, 0.5],
-                              pitch = [0, 0, 0],
-                              yaw = [-90, 0, 90],
-                              roll = [0, 0, 0],
-                              image_pixel_width = [512, 512, 512],
-                              image_pixel_height = [512, 512, 512],
-                              first_projector_image=projector_images[0],
-                              second_projector_image=projector_images[1],
-                              mirror_radius=mirror_radius,
-                              dome_center=[0, dome_y, dome_z],
-                              animal_position = [0, animal_y, animal_z])
-
-        # Warp a test image with the estimated parameters
-        warped_image = dome.warp_image_for_dome([test_image, test_image,
-                                                 test_image])
-        warped_image.save("warped_test_image.jpg", "jpeg")
-        
+        print_parameters(parameters)
 
 
