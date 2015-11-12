@@ -44,7 +44,7 @@ from scipy import ndimage
 import cv2
 
 # import stuff for our projector setup and calibration camera
-from dome_projection import MissedTheMirror
+from dome_projection import NoViewingDirection
 from dome_projection import DomeProjection
 from dome_projection import flat_display_direction
 from dome_projection import calc_projector_images
@@ -375,30 +375,27 @@ def calc_viewing_directions(photo_points, parameters):
 
 def print_parameters(parameters):
     """ print out the parameters that are being estimated """
-    print "Projector y:", parameters['projector_focal_point'][1]
-    print "Projector z:", parameters['projector_focal_point'][2]
-    print "Projector theta:", parameters['projector_theta']
-    print "Projector vertical offset:", parameters['projector_vertical_offset']
-    print "Projector roll:", parameters['projector_roll']
-    print "Mirror radius:", parameters['mirror_radius']
-    print "Dome y-coordinate:", parameters['dome_center'][1]
-    print "Dome z-coordinate:", parameters['dome_center'][2]
-    print "Dome radius:", parameters['dome_radius']
-    print "Animal y-coordinate:", parameters['animal_position'][1]
-    print "Animal z-coordinate:", parameters['animal_position'][2]
+    print "animal_position =", parameters['animal_position']
+    print "dome_center =", parameters['dome_center']
+    print "dome_radius =", parameters['dome_radius']
+    print "mirror_radius =", parameters['mirror_radius']
+    print "projector_focal_point =", parameters['projector_focal_point']
+    print "projector_roll =", parameters['projector_roll']
+    print "projector_theta =", parameters['projector_theta']
+    print "projector_vertical_offset =", parameters['projector_vertical_offset']
 
 
 def parameters_to_x(parameters):
     """ convert a parameters dictionary to an array for minimization """
-    x = (parameters['projector_focal_point'][1],
-         parameters['projector_focal_point'][2],
-         parameters['projector_roll'],
-         parameters['mirror_radius'],
+    x = (parameters['animal_position'][1],
+         parameters['animal_position'][2],
          parameters['dome_center'][1],
          parameters['dome_center'][2],
          parameters['dome_radius'],
-         parameters['animal_position'][1],
-         parameters['animal_position'][2],
+         parameters['mirror_radius'],
+         parameters['projector_focal_point'][1],
+         parameters['projector_focal_point'][2],
+         parameters['projector_roll'],
          parameters['projector_theta'],
          parameters['projector_vertical_offset'])
     return x
@@ -406,15 +403,15 @@ def parameters_to_x(parameters):
 
 def x_to_parameters(x):
     """ decode x into meaningful names and setup the parameters dictionary """
-    projector_y = x[0]
-    projector_z = x[1]
-    projector_roll = x[2]
-    mirror_radius = x[3]
-    dome_y = x[4]
-    dome_z = x[5]
-    dome_radius = x[6]
-    animal_y = x[7]
-    animal_z = x[8]
+    animal_y = x[0]
+    animal_z = x[1]
+    dome_y = x[2]
+    dome_z = x[3]
+    dome_radius = x[4]
+    mirror_radius = x[5]
+    projector_y = x[6]
+    projector_z = x[7]
+    projector_roll = x[8]
     projector_theta = x[9]
     projector_vertical_offset = x[10]
     parameters = dict(image_pixel_width = [1280],
@@ -471,11 +468,12 @@ def dome_distortion(x, photo_points, projector_points):
             try:
                 direction = dome.dome_display_direction(*projector_points[i])
                 estimated_directions[i] = direction
-            except MissedTheMirror:
-                # For each point that fails to hit the mirror, set its
+            except NoViewingDirection:
+                # For each point that has no viewing direction, set its
                 # estimated viewing direction to the opposite of the actual
                 # direction.  This will produce the worst possible result for
-                # these points.
+                # these points and encourage the minimization routine to look
+                # elsewhere.
                 estimated_directions[i] = -1*array(actual_directions[i])
         """
         Calculate the length of the difference between each measured direction
@@ -521,21 +519,24 @@ def estimate_parameters(photo_points, projector_points):
         # Setup initial values of the parameters
         dome = DomeProjection()
         parameters = dome.get_parameters()
+        #from params_2015_11_04_17_16 import parameters # 1.7
+        #from parameters_domecal import parameters # ??
+        #from parameters_2015_02_10 import parameters # SLSQP: 1.7
         x0 = parameters_to_x(parameters)
 
         # Make sure mirror radius and dome radius are > 0, and limit the
         # animal's z-coordinate to keep it inside the dome
-        x_bounds = [(0.5, 1.0),    # projector y-coordinate
-                    (-0.1, 0.1),   # projector z-coordinate
-                    (-0.1, 0.1),   # projector roll
-                    (0.2, 0.3),    # mirror radius
-                    (0.0, 0.2),    # dome y-coordinate
-                    (0.2, 0.5),    # dome z-coordinate
+        x_bounds = [(-0.3, 0.3),   # animal position y-coordinate
+                    (0.3, 0.8),    # animal position z-coordinate
+                    (0.0, 0.3),    # dome center y-coordinate
+                    (0.2, 0.5),    # dome center z-coordinate
                     (0.5, 0.7),    # dome radius
-                    (-0.1, 0.15),  # animal position y-coordinate
-                    (0.5, 0.6),    # animal position z-coordinate
+                    (0.2, 0.3),    # mirror radius
+                    (0.5, 1.0),    # projector focal point y-coordinate
+                    (-0.2, 0.2),   # projector focal point z-coordinate
+                    (0.0, 0.0),    # projector roll
                     (0.1, 0.4),    # projector theta
-                    (0.01, 0.06)]  # projector vertical offset
+                    (0.0, 0.2)]    # projector vertical offset
 
         # Estimate parameter values by minimizing the difference between
         # the measured and calculated directions.
