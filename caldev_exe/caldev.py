@@ -1,3 +1,6 @@
+# import stuff from numpy
+from numpy import pi, sin, cos
+
 # import win32 stuff
 import winxpgui as win32gui
 import win32api
@@ -35,10 +38,14 @@ VK_7 = 0x37
 VK_8 = 0x38
 VK_9 = 0x39
 VK_F = 0x46
+VK_N = 0x4e
 VK_O = 0x4f
+VK_P = 0x50
+VK_Q = 0x51
 VK_S = 0x53
 VK_OEM_PLUS = 0xbb
 VK_OEM_MINUS = 0xbd
+VK_ESCAPE = 0x1b
 
 # window styles
 regular_window = (win32con.WS_THICKFRAME | win32con.WS_VISIBLE |
@@ -53,35 +60,25 @@ class MainWindow():
     """ The main application window class """
 
     def __init__(self):
-        dome = DomeProjection()
-        # guess some initial projector pixel values
-        self._pixels = [[333, 640], [318, 527], [273, 471],
-                        [435, 640], [412, 425], [339, 296],
-                        [570, 640], [548, 332], [470, 118]]
-        # find the projector pixels for the calibration directions using the
-        # default parameter values
-        self._pixels = dome.find_projector_pixels(dome.calibration_directions,
-                                                  self._pixels)
-        # Since there are an even number of pixels in each row, no pixel is
-        # centered on the 0 yaw line which is located at column 639.5.
-        # Two by two squares of pixels are used so that spots can be centered
-        # at this half pixel location.  Here I make sure pixels 0, 3, and 6 are
-        # on the zero yaw line and add 0.5 all the other pixel's rows and
-        # columns.
-        for i in range(len(self._pixels)):
-            pixel = self._pixels[i]
-            if i in [0, 3, 6]:
-                pixel[1] = PROJECTOR_PIXEL_WIDTH/2 - 0.5
-            else:
-                pixel[1] = pixel[1] + 0.5
-            pixel[0] = pixel[0] + 0.5
+        # initial projector pixel values
+        pixels = [[341.5, 640.5], [353.5, 764.5], [378.5, 743.5],
+                  [395.5, 699.5], [402.5, 640.5], [395.5, 582.5],
+                  [379.5, 539.5], [356.5, 517.5], [402.5, 903.5],
+                  [448.5, 853.5], [478.5, 757.5], [489.5, 639.5],
+                  [480.5, 525.5], [452.5, 429.5], [404.5, 378.5],
+                  [509.5, 1060.5], [566.5, 962.5], [594.5, 808.5],
+                  [603.5, 639.5], [595.5, 471.5], [565.5, 325.5],
+                  [514.5, 231.5]]
+        points = [[p[1], p[0]] for p in pixels]
+        # convert (u,v) to (row, column)
+        self._pixels = [[int(p[1]) + 0.5, int(p[0]) + 0.5] for p in points]
         # initialize the increment for each pixel in the image
         self._increment = 10
         # initialize the pixel selected for moving
         self._selected_pixel = 0
         # setup the window
         self._name = "MainWindow"
-        self._title = "Dome Calibration"
+        self._title = "Taking Photos for Dome Calibration"
         self._width = PROJECTOR_PIXEL_WIDTH
         self._height = PROJECTOR_PIXEL_HEIGHT
         self._style = window_styles["regular"]
@@ -128,8 +125,6 @@ class MainWindow():
                     parameter_file = open(file_name, "w")
                     for pixel in self._pixels:
                         parameter_file.write("%.1f, %.1f\n" % (pixel[0], pixel[1]))
-                    for i in range(len(pixel_colors)):
-                        parameter_file.write("0x%06x\n" % (pixel_colors[i]))
                     parameter_file.close()
                 except Exception, e:
                     print str(e)
@@ -158,9 +153,6 @@ class MainWindow():
                         line = parameter_file.readline()
                         row, col = line.split(", ")
                         self._pixels[i] = [float(row), float(col)]
-                    for i in range(len(pixel_colors)):
-                        line = parameter_file.readline()
-                        pixel_colors[i] = int(line, 16)
                     parameter_file.close()
                 except Exception, e:
                     print str(e)
@@ -238,7 +230,8 @@ class MainWindow():
             bottom = top + 1
             for row in [top, bottom]:
                 for col in [left, right]:
-                    win32gui.SetPixel(dc, col, row, pixel_colors[i])
+                    #win32gui.SetPixel(dc, col, row, pixel_colors[i])
+                    win32gui.SetPixel(dc, col, row, GREEN)
         win32gui.SetBkColor(dc, BLACK);
         win32gui.SetTextColor(dc, WHITE)
         win32gui.EndPaint(hwnd, ps)
@@ -259,16 +252,10 @@ class MainWindow():
                 self._pixels[self._selected_pixel][0] += self._increment
     
             elif wparam == win32con.VK_LEFT:
-                if self._selected_pixel in [1, 2, 4, 5, 7, 8]:
-                    """ don't allow horizontal movement
-                    of 0 yaw pixels [0, 3, 6] """
-                    self._pixels[self._selected_pixel][1] += self._increment
+                self._pixels[self._selected_pixel][1] -= self._increment
     
             elif wparam == win32con.VK_RIGHT:
-                if self._selected_pixel in [1, 2, 4, 5, 7, 8]:
-                    """ don't allow horizontal movement
-                    of 0 yaw pixels [0, 3, 6] """
-                    self._pixels[self._selected_pixel][1] -= self._increment
+                self._pixels[self._selected_pixel][1] += self._increment
     
             elif wparam == VK_1:
                 self._selected_pixel = 0
@@ -318,6 +305,13 @@ class MainWindow():
                 else:
                     self.enterFullscreen()
 
+            elif wparam == VK_N:
+                if self._selected_pixel == len(self._pixels) - 1:
+                    self._selected_pixel = 0
+                else:
+                    self._selected_pixel += 1
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+
             elif wparam == VK_O:
                 # read parameters and pixels from a file
                 self.openParameterFile(hwnd)
@@ -325,9 +319,22 @@ class MainWindow():
                 win32gui.RedrawWindow(hwnd, None, None, win32con.RDW_INVALIDATE |
                                       win32con.RDW_INTERNALPAINT)
     
+            elif wparam == VK_P:
+                if self._selected_pixel == 0:
+                    self._selected_pixel = len(self._pixels) - 1
+                else:
+                    self._selected_pixel -= 1
+                self._display_string = "Pixel " + str(self._selected_pixel + 1)
+
+            elif wparam == VK_Q:
+                win32gui.PostQuitMessage(0)
+
             elif wparam == VK_S:
                 self.saveParameterFile(hwnd)
     
+            elif wparam == VK_ESCAPE:
+                self.exitFullscreen()
+
             elif wparam == VK_OEM_PLUS:
                 self._increment = 10
                 self._display_string = "increment = %d" % self._increment
@@ -373,9 +380,12 @@ class MainWindow():
                                 "Left Arrow: move selected pixel left\n" +
                                 "Plus: change pixel increment to 10 pixels\n" +
                                 "Minus: change pixel increment to 1 pixel\n" +
+                                "N: select next pixel\n" +
+                                "P: select previous pixel\n" +
                                 "F: toggle full screen\n" +
                                 "O: open pixel file\n" +
                                 "S: save pixel file\n" +
+                                "Q: quit\n" +
                                 "Shift: show select pixel number\n" +
                                 "Control: show current pixel increment\n",
                                 "Help", win32con.MB_ICONINFORMATION |

@@ -1,0 +1,9 @@
+('Z:\\Users\\jwbwater\\BCM\\FireflyProject\\DomeProjection\\Python\\calphoto_exe\\dist\\calphoto.exe',
+ True,
+ False,
+ None,
+ None,
+ [],
+ None,
+ False,
+ 1445621649L)
