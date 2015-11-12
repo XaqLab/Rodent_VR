@@ -29,10 +29,13 @@ from random import randint
 from PIL import Image
 from scipy.optimize import fmin_powell
 
-class MissedTheMirror(Exception):
+
+class NoViewingDirection(Exception):
+    """ Exception to handle cases where there is no viewing direction because
+    the light from a point in the projector image never reaches the dome. """
     def __init__(self):
-         self.value = ("The light from this point in the " +
-                       "projector image missed the mirror!")
+         self.value = ("There is no viewing direction for" +
+                       "this point in the projector image!")
     def __str__(self):
         return repr(self.value)
 
@@ -56,14 +59,14 @@ class DomeProjection:
                  image_pixel_width = [280, 280, 280],
                  projector_pixel_height = 720,
                  projector_pixel_width = 1280,
-                 projector_focal_point = [0, 0.7, 0.0],
-                 projector_theta = 0.2,
-                 projector_vertical_offset = 0.025,
-                 projector_roll = 0.0,
-                 mirror_radius = 0.211,
-                 dome_center = [0, 0.125, 0.300],
-                 dome_radius = 0.6,
-                 animal_position = [0, 0.040, 0.597]
+                 projector_focal_point = [0, 0.858, -0.052],
+                 projector_theta = 0.166,
+                 projector_vertical_offset = 0.211,
+                 projector_roll = 0.01,
+                 mirror_radius = 0.162,
+                 dome_center = [0, 0.110, 0.348],
+                 dome_radius = 0.601,
+                 animal_position = [0, 0.056, 0.575]
                 ):
 
         """
@@ -139,14 +142,14 @@ class DomeProjection:
         #######################################################################
         # make a list of the desired directions for calibration
         self.calibration_directions = []
-        for pitch in [-15, 0, 30, 60]:
-            for yaw in [-120, -90, -60, -30, 0, 30, 60, 90, 120]:
+        # add straight up
+        self.calibration_directions.append([0, 0, 1])
+        for pitch in [60, 30, 0]:
+            for yaw in [-90, -60, -30, 0, 30, 60, 90]:
                 x = sin(yaw * pi/180) * cos(pitch * pi/180)
                 y = cos(yaw * pi/180) * cos(pitch * pi/180)
                 z = sin(pitch * pi/180)
                 self.calibration_directions.append([x, y, z])
-        # add straight up
-        self.calibration_directions.append([0, 0, 1])
     
         #######################################################################
         # Properties used to share results between method calls
@@ -331,8 +334,9 @@ class DomeProjection:
                     direction = self.dome_display_direction(u, v)
                     self._projector_mask[row, column] = 1
                     self._animal_view_directions[row, column] = direction
-                except MissedTheMirror:
-                    # This pixel does not hit the mirror
+                except NoViewingDirection:
+                    # This projector pixel did not hit the mirror or it hit
+                    # the mirror and missed the dome
                     self._projector_mask[row, column] = 0
                     self._animal_view_directions[row, column] = None
 
@@ -391,7 +395,7 @@ class DomeProjection:
         d_squared = b**2 - 4*a*c
         if d_squared < 0:
             # raise an exception for points that miss the mirror
-            raise MissedTheMirror()
+            raise NoViewingDirection()
         """
         For projector pixels that hit the mirror, calculate the
         incident light vector.
@@ -440,7 +444,11 @@ class DomeProjection:
         # Take the solution with positive vector length which is the reflected
         # light.  The vector with the negative length is directed in the
         # opposite direction.
-        d = sqrt(b**2 - 4*a*c)
+        d_squared = b**2 - 4*a*c
+        if d_squared < 0:
+            # raise an exception for reflections that miss the dome
+            raise NoViewingDirection()
+        d = sqrt(d_squared)
         r = max([(-b + d) / (2*a),
                  (-b - d) / (2*a)])
         x = r*rldx
@@ -719,15 +727,17 @@ class DomeProjection:
             v = projector_points[2*n + 1]
             try:
                 actual_direction = self.dome_display_direction(u, v)
-            except MissedTheMirror:
-                # For each point that fails to hit the mirror, set its actual
+            except NoViewingDirection:
+                # For each point that has no viewing direction, set its actual
                 # viewing direction to the opposite of the desired direction.
-                # This will produce the worst possible result for these points.
-                actual_direction = -1*(desired_directions[n])
+                # This will produce the worst possible result for these points
+                # thereby encouraging the minimization routine to look
+                # elsewhere.
+                actual_direction = -array(desired_directions[n])
             actual_directions.append(actual_direction)
     
-        value = sum([linalg.norm(desired_directions[i] - actual_directions[i])
-                                 for i in range(len(desired_directions))])
+        diffs = array(desired_directions) - array(actual_directions)
+        value = sum([linalg.norm(diff) for diff in diffs])
         return value
 
 
@@ -840,19 +850,17 @@ def flat_display_direction(u, v, screen_height, screen_width,
 
 def calc_projector_images(y, z, theta, vertical_offset):
     """
-    Calculate the two projector_image parameters that the dome class requires
-    from a smaller set of parameters that are more parameter estimation
-    friendly. The location of the projector's focal point is given by y and z.
-    Theta is half the angle between lines from the focal point to the left and
-    right sides of the image.  The lens offset of the projector is described by
-    vertical_offset.
+    Calculate the two projector_image parameters that were originally used to
+    characterize the projector frsutum.  This function is only here to
+    facillitate sending parameter values to Jian who ported the dome_projection
+    class to C++ when it used these parameters.
     """
     # distance to first image, chosen to match measurements
     y1 = 0.436
     # calculate x from theta and the distance between the focal point and image
     x1 = (y - y1) * tan(theta)
     # calculate z by assuming a 16:9 aspect ratio 
-    z1_low = vertical_offset
+    z1_low = (y - y1)*vertical_offset + z
     z1_high = z1_low + 2 * 9.0/16.0 * x1
     image1 = [[ -x1,  y1,  z1_high ],
               [  x1,  y1,  z1_high ],
@@ -862,7 +870,7 @@ def calc_projector_images(y, z, theta, vertical_offset):
     # do it again for image2
     y2 = 0.265
     x2 = (y - y2) * tan(theta)
-    slope = (vertical_offset - z) / (y - y1)
+    slope = vertical_offset
     z2_low = z + slope * (y - y2)
     z2_high = z2_low + 2 * 9.0/16.0 * x2
     image2 = [[ -x2,  y2,  z2_high ],
@@ -881,23 +889,25 @@ def calc_frustum_parameters(image1, image2):
     This is done to reduce the degrees of freedom to the minimum necessary for
     parameter estimation using SciPy's minimization routine.
     """
-    # this one is easy
-    vertical_offset = image1[2][2]
+    # calculate vertical_offset
+    y1 = image1[1][1]
+    y2 = image2[1][1]
+    z1_low = image1[2][2]
+    z2_low = image2[2][2]
+    slope = (z2_low - z1_low) / (y1 - y2)
+    vertical_offset = slope
 
     # calculate theta
     x1 = image1[1][0]
     x2 = image2[1][0]
-    y1 = image1[1][1]
-    y2 = image2[1][1]
     theta = arctan((x2 - x1) / (y1 - y2))
 
     # calculate y
     y = y1 + x1 / tan(theta)
 
     # calculate z
-    z2_low = image2[2][2]
-    slope = (vertical_offset - z2_low) / (y1 - y2)
-    z = vertical_offset + slope * (y - y1)
+    slope = vertical_offset
+    z = z1_low - slope * (y - y1)
     
     return [y, z, theta, vertical_offset]
 
