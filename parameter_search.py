@@ -3,6 +3,7 @@ from numpy import pi, arcsin, arctan2
 from numpy.linalg import norm
 from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, SingleIntervalTicker
+from bokeh.io import push_notebook
 
 # import dome projection stuff
 from dome_projection import DomeProjection
@@ -118,7 +119,8 @@ class ParameterSearch():
         # update the data
         self.source.data['x'] = yaw
         self.source.data['y'] = pitch
-        self.source.push_notebook()
+        #self.source.push_notebook()
+        push_notebook()
 
         """
         Calculate the length of the difference between each actual direction
