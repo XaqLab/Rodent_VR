@@ -48,10 +48,10 @@ import foscam_FI9821P as camera
 
 # define constants
 MAX_FLOAT = sys.float_info.max
-PROJECTOR_PIXEL_WIDTH = 1280
-PROJECTOR_PIXEL_HEIGHT = 720
-CAMERA_PIXEL_WIDTH = 1280
-CAMERA_PIXEL_HEIGHT = 720
+#PROJECTOR_PIXEL_WIDTH = 1280
+#PROJECTOR_PIXEL_HEIGHT = 720
+PROJECTOR_PIXEL_WIDTH = 1024
+PROJECTOR_PIXEL_HEIGHT = 768
 BACKGROUND_PIXEL_VALUE = 0
 OBJECT_PIXEL_VALUE = 192  # < 255 to prevent saturating the camera
 LOWER_LEFT_PHOTO = 0   # defined to make the code easier to read
@@ -95,15 +95,6 @@ def read_centroid_list(filename):
 
 def print_parameters(parameters):
     """ print out the parameters that are being estimated """
-    #print "animal_position =", parameters['animal_position']
-    #print "dome_center =", parameters['dome_center']
-    #print "dome_radius =", parameters['dome_radius']
-    #print "mirror_radius =", parameters['mirror_radius']
-    #print "projector_focal_point =", parameters['projector_focal_point']
-    #print "projector_roll =", parameters['projector_roll']
-    #print "projector_theta =", parameters['projector_theta']
-    #print "projector_vertical_offset =", parameters['projector_vertical_offset']
-    #print
     print "{'animal_y':%.3f," % parameters['animal_position'][1]
     print "'animal_z':%.3f," % parameters['animal_position'][2]
     print "'dome_y':%.3f," % parameters['dome_center'][1]
@@ -146,10 +137,10 @@ def x_to_parameters(x):
     projector_roll = x[8]
     projector_theta = x[9]
     projector_vertical_offset = x[10]
-    parameters = dict(image_pixel_width = [1280],
-                      image_pixel_height = [720],
-                      projector_pixel_width = 1280,
-                      projector_pixel_height = 720,
+    parameters = dict(image_pixel_width = [PROJECTOR_PIXEL_WIDTH],
+                      image_pixel_height = [PROJECTOR_PIXEL_HEIGHT],
+                      projector_pixel_width = PROJECTOR_PIXEL_WIDTH,
+                      projector_pixel_height = PROJECTOR_PIXEL_HEIGHT,
                       projector_focal_point = [0, projector_y, projector_z],
                       projector_theta = projector_theta,
                       projector_vertical_offset = projector_vertical_offset,

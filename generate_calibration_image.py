@@ -7,8 +7,10 @@ from dome_projection import DomeProjection
 import cPickle as pickle
 
 # define the projector resolution
-PROJECTOR_PIXEL_WIDTH = 1280
-PROJECTOR_PIXEL_HEIGHT = 720
+#PROJECTOR_PIXEL_WIDTH = 1280
+#PROJECTOR_PIXEL_HEIGHT = 720
+PROJECTOR_PIXEL_WIDTH = 1024
+PROJECTOR_PIXEL_HEIGHT = 768
 GREEN = array([0, 128, 0], dtype=uint8)
 
 # initialize the dome and find the projector pixel coordinates that correspond
