@@ -14,8 +14,17 @@ PROJECTOR_PIXEL_HEIGHT = 768
 GREEN = array([0, 128, 0], dtype=uint8)
 
 # initialize the dome and find the projector pixel coordinates that correspond
-# to the calibration directions using the default parameter values
-dome = DomeProjection()
+# to the calibration directions using these parameter values
+parameters = {'animal_position':[0, 0.016, 0.509],
+              'dome_center':[0, 0.149, 0.446], 'dome_radius':0.667,
+              'mirror_radius':0.256,
+              'projector_focal_point':[0, 0.823, 0.169],
+              'projector_roll':0.015, 'projector_theta':0.400,
+              'projector_vertical_offset':0.000,
+              'projector_pixel_height':PROJECTOR_PIXEL_HEIGHT,
+              'projector_pixel_width':PROJECTOR_PIXEL_WIDTH}
+
+dome = DomeProjection(**parameters)
 calibration_directions = dome.calibration_directions
 pickle_filename = 'calibration_image.pkl'
 try:
