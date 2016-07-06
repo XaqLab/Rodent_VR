@@ -17,8 +17,8 @@ PROJECTOR_PIXEL_HEIGHT = 768
 
 # Color constants
 BLACK = win32api.RGB(0, 0, 0)
-RED = win32api.RGB(128, 0, 0)
-GREEN = win32api.RGB(0, 128, 0)
+RED = win32api.RGB(192, 0, 0)
+GREEN = win32api.RGB(0, 255, 0)
 BLUE = win32api.RGB(0, 0, 128)
 YELLOW = win32api.RGB(128, 128, 0)
 CYAN = win32api.RGB(0, 128, 128)
