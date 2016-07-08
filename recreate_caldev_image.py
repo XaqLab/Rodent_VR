@@ -1,21 +1,24 @@
 from numpy import array, zeros, uint8
 from PIL import Image
+import sys
 
-PROJECTOR_PIXEL_WIDTH = 1280
-PROJECTOR_PIXEL_HEIGHT = 720
+#PROJECTOR_PIXEL_WIDTH = 1280
+#PROJECTOR_PIXEL_HEIGHT = 720
+PROJECTOR_PIXEL_WIDTH = 1024
+PROJECTOR_PIXEL_HEIGHT = 768
 GREEN = array([0, 128, 0], dtype=uint8)
 
 centroids = zeros([22,2])
-# Read the parameters from a text file
-file_name = "calibration/calibration_device/2015_11_06_centroids.txt"
+# Read the centroids from a text file
+file_name = sys.argv[1]
 if file_name:
     try:
-        parameter_file = open(file_name, "r")
+        centroid_file = open(file_name, "r")
         for i in range(len(centroids)):
-            line = parameter_file.readline()
+            line = centroid_file.readline()
             row, col = line.split(", ")
             centroids[i] = [float(row), float(col)]
-        parameter_file.close()
+        centroid_file.close()
     except Exception, e:
         print str(e)
         raise e

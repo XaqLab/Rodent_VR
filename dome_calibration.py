@@ -25,39 +25,21 @@ python dome_calibration.py centroid_list.txt
 
 # import stuff from standard libraries
 import sys
+from datetime import datetime
+from numpy import pi, arcsin, arctan2
+from numpy import array, uint8, zeros
+from numpy.linalg import norm
 from PIL import Image
-from numpy import pi, sin, cos, tan, arcsin, arccos, arctan, arctan2
-from numpy import array, uint8, dot, linalg, sqrt, float32, cross, zeros
-from numpy.linalg import norm, inv
-from scipy.optimize import minimize, fsolve
+import cPickle as pickle
 from scipy.optimize import fmin_l_bfgs_b
-from scipy.optimize import fmin_slsqp
-from scipy.optimize import fmin_powell
-from scipy.optimize import basinhopping
-from scipy.optimize import differential_evolution
-from scipy import ndimage
-import cv2
+#from scipy.optimize import minimize, fsolve
+#from scipy.optimize import fmin_slsqp
+#from scipy.optimize import fmin_powell
+#from scipy.optimize import basinhopping
 
-# import stuff for our projector setup and calibration camera
+# import stuff for our projector setup
 from dome_projection import NoViewingDirection
 from dome_projection import DomeProjection
-from dome_projection import flat_display_direction
-from dome_projection import calc_projector_images
-from dome_projection import calc_frustum_parameters
-import foscam_FI9821P as camera
-
-# define constants
-MAX_FLOAT = sys.float_info.max
-#PROJECTOR_PIXEL_WIDTH = 1280
-#PROJECTOR_PIXEL_HEIGHT = 720
-PROJECTOR_PIXEL_WIDTH = 1024
-PROJECTOR_PIXEL_HEIGHT = 768
-BACKGROUND_PIXEL_VALUE = 0
-OBJECT_PIXEL_VALUE = 192  # < 255 to prevent saturating the camera
-LOWER_LEFT_PHOTO = 0   # defined to make the code easier to read
-LOWER_RIGHT_PHOTO = 1  # defined to make the code easier to read
-UPPER_LEFT_PHOTO = 2   # defined to make the code easier to read
-UPPER_RIGHT_PHOTO = 3  # defined to make the code easier to read
 
 # debug stuff
 DEBUG = True
@@ -65,6 +47,85 @@ previous_parameters = None
 best_parameters = None
 best_sum_of_errors = 100
 
+
+def get_projector_resolution():
+    print "Please choose the projector's resolution from this list:"
+    print "1) 1280 by 720"
+    print "2) 1024 by 768"
+    done = False
+    while not done:
+        choice = raw_input("Choice: ")
+        if "1" in choice:
+            PROJECTOR_PIXEL_WIDTH = 1280
+            PROJECTOR_PIXEL_HEIGHT = 720
+            done = True
+        elif "2" in choice:
+            PROJECTOR_PIXEL_WIDTH = 1024
+            PROJECTOR_PIXEL_HEIGHT = 768
+            done = True
+    return PROJECTOR_PIXEL_WIDTH, PROJECTOR_PIXEL_HEIGHT
+
+
+def check_point_symmetry(points):
+    """ Check the symmetry of the points in the projector image to be used
+    for calibration.  This will give us an idea of how well aligned the
+    projection system is.  """
+    # get the calibration directions from DomeProjection
+    dome = DomeProjection()
+    calibration_directions = dome.calibration_directions
+    
+    # compare zero yaw points
+    print "Zero yaw points:"
+    print "(%6s, %6s)   (%6s, %6s)" % ("x", "y", "pitch", "yaw")
+    for i in range(len(calibration_directions)):
+        direction = calibration_directions[i]
+        x,y,z = direction
+        pitch = 180/pi*arcsin(z)
+        yaw = 180/pi*arctan2(x, y)
+        if abs(yaw - 0.0) < 15.0:
+            point = points[i]
+            x, y = point
+            # shift row and column numbers so (0,0) is at the image center
+            shifted_x = x - PROJECTOR_PIXEL_WIDTH/2
+            shifted_y = y - PROJECTOR_PIXEL_HEIGHT/2
+            print "(%6.1f, %6.1f)   (%6.1f, %6.1f)" % (shifted_x, shifted_y,
+                                                       pitch, yaw)
+    print
+    
+    # Compare symmetric points, e.g. (30, -60) and (30, 60) pitch and yaw.
+    # If the dome projection system is aligned then the shifted y values should
+    # be the same and the shifted x values should be opposites (one is the
+    # negative of the other).
+    print "Symmetric points (equal pitch, opposite yaw):"
+    for i in range(len(calibration_directions)):
+        direction1 = calibration_directions[i]
+        x,y,z = direction1
+        pitch1 = 180/pi*arcsin(z)
+        yaw1 = 180/pi*arctan2(x, y)
+        if yaw1 - 0.0 > 15.0:
+            # positive non-zero yaw (negative will be the symmetric point)
+            for j in range(len(calibration_directions)):
+                direction2 = calibration_directions[j]
+                x,y,z = direction2
+                pitch2 = 180/pi*arcsin(z)
+                yaw2 = 180/pi*arctan2(x, y)
+                if abs(pitch1 - pitch2) < 15.0 and abs(yaw1 + yaw2) < 15.0:
+                    # found symmetric points
+                    point1 = points[i]
+                    x1, y1 = point1
+                    point2 = points[j]
+                    x2, y2 = point2
+                    # shift x and y values so (0,0) is at the image center
+                    shifted_x1 = x1 - PROJECTOR_PIXEL_WIDTH/2
+                    shifted_y1 = y1 - PROJECTOR_PIXEL_HEIGHT/2
+                    shifted_x2 = x2 - PROJECTOR_PIXEL_WIDTH/2
+                    shifted_y2 = y2 - PROJECTOR_PIXEL_HEIGHT/2
+                    print "(%6.1f, %6.1f)   (%6.1f, %6.1f)" % \
+                            (shifted_x1, shifted_y1, pitch1, yaw1)
+                    print "(%6.1f, %6.1f)   (%6.1f, %6.1f)" % \
+                            (shifted_x2, shifted_y2, pitch2, yaw2)
+                    print
+    
 
 class InvalidParameters(Exception):
     def __init__(self):
@@ -171,10 +232,9 @@ def dome_distortion(x, projector_points):
 
     try:
         """
-        Find the actual viewing directions using photo_points and the estimated
-        parameters.  Because the orientation of the camera is unknown,
-        determination of the actual viewing directions depends on the estimates
-        of the animal's position, the dome position and the dome radius.
+        The actual viewing directions corresponding to projector_points are
+        contained in DomeProjection's calibration_directions property.  These
+        directions are determined by the 3D printed calibration device.
         """
         dome = DomeProjection(**parameters)
         actual_directions = dome.calibration_directions
@@ -208,7 +268,7 @@ def dome_distortion(x, projector_points):
             yaw = 180/pi*arctan2(x, y)
             pitch = 180/pi*arcsin(z)
             print "[%6.3f, %6.3f]," % (pitch, yaw),
-            error = linalg.norm(actual_direction - estimated_directions[i])
+            error = norm(actual_direction - estimated_directions[i])
             sum_of_errors = sum_of_errors + error**2
             if error > max_error:
                 max_error = error
@@ -300,6 +360,56 @@ def estimate_parameters(projector_points):
     return parameters
 
 
+def save_calibration_image(parameters, datetime_string):
+    """ Generate the projector calibration image to use with the 3D printed
+    calibration device """
+    filename = "calibration_image_" + datetime_string + ".png"
+    print
+    print "Saving calibration image in " + filename
+    GREEN = array([0, 255, 0], dtype=uint8)
+    
+    dome = DomeProjection(**parameters)
+    calibration_directions = dome.calibration_directions
+    pickle_filename = 'calibration_image.pkl'
+    try:
+        # see if there are previously found centroids that we can use as an initial
+        # guess
+        with open(pickle_filename, 'rb') as pickle_file:
+            centroids = pickle.load(pickle_file)
+        if len(centroids) == len(calibration_directions):
+            centroids = dome.find_projector_points(calibration_directions,
+                                                   centroids)
+        else:
+            # wrong number of previous centroids so do the search from scratch
+            centroids = dome.find_projector_points(calibration_directions)
+    except IOError:
+        # no previous centroids found so do the search from scratch
+        centroids = dome.find_projector_points(calibration_directions)
+    
+    # save centroids to a file for use as the initial guess next time
+    with open(pickle_filename, 'wb') as pickle_file:
+        pickle.dump(centroids, pickle_file)
+    
+    # make an image with 4 pixel squares centered on these pixel coordinates
+    pixels = zeros([PROJECTOR_PIXEL_HEIGHT, PROJECTOR_PIXEL_WIDTH, 3], dtype=uint8)
+    
+    for centroid in centroids:
+        # convert centroids from (u, v) coordinates to (row, col) coordinates
+        col, row = centroid
+        row = int(round(row - 0.5))
+        col = int(round(col - 0.5))
+        if (row >= 0 and row < PROJECTOR_PIXEL_HEIGHT and
+            col >= 0 and col < PROJECTOR_PIXEL_WIDTH):
+            pixels[row, col] = GREEN
+            pixels[row, col + 1] = GREEN
+            pixels[row + 1, col] = GREEN
+            pixels[row + 1, col + 1] = GREEN
+    
+    image = Image.fromarray(array(pixels, dtype=uint8), mode='RGB')
+    image.save(filename, "png")
+    print "Done."
+    
+    
 ###############################################################################
 # Main program starts here
 ###############################################################################
@@ -314,9 +424,15 @@ if __name__ == "__main__":
         print
 
     else:
-        """ Calculate the dome projection parameters.  The first argument is
-        the name of a file containing the list of centroids for the spots in
-        the projected calibration image. """
+        """ Calculate the dome projection parameters.  """
+        # query the user for the projector resolution
+        WIDTH, HEIGHT = get_projector_resolution()
+        PROJECTOR_PIXEL_WIDTH = WIDTH
+        PROJECTOR_PIXEL_HEIGHT = HEIGHT
+
+        """ The first argument is the name of a file containing the list of
+        centroids corresponding to the spots projected by the calibration
+        device. """
         centroid_filename = sys.argv[1]
         """
         Read the list of centroids from the file specified by the first
@@ -328,11 +444,32 @@ if __name__ == "__main__":
         projector_points = [[c[1] + 0.5, c[0] + 0.5]
                             for c in projector_centroids]
 
-        # search the parameter space to minimize differeces between measured
-        # and calculated directions
+        # Check the symmetry of these projector_points to check system
+        # alignment.  Show the results and ask the user if they want to
+        # continue with the calibration.
+        check_point_symmetry(projector_points)
+        continue_with_calibration = raw_input("Continue with calibration? (Y/N) ")
+        if "y" not in continue_with_calibration.lower():
+            sys.exit()
+
+        # Search the parameter space to minimize differeces between measured
+        # and calculated directions.
         parameters = estimate_parameters(projector_points)
+
+        # Save the centroid symmetry info, viewing direction errors, and
+        # parameter values to a calibration_results file.
+        """ Holding off on this for now. """
 
         # Print out the estimated parameter values
         print_parameters(parameters)
+
+        # Generate an image that can be used to check the calibration.  It has
+        # green spots that correspond to calibration_directions.
+        datetime_string = datetime.now().strftime("%Y_%m_%dT%H_%M_%S")
+        save_calibration_image(parameters, datetime_string)
+
+
+
+
 
 

@@ -27,6 +27,8 @@ def create_vertical_lines(image_size, line_width, line_spacing):
         for col in range(image_pixel_width):
             if (mod(col, line_width + line_spacing) < line_width):
                 pixels[row][col] = 255
+                if row == 0:
+                    print col
 
     #return Image.fromarray(pixels, mode='RGB')
     return Image.fromarray(pixels, mode='L')
@@ -53,8 +55,10 @@ def create_horizontal_lines(image_size, line_width, line_spacing):
 
 
 if __name__ == "__main__":
-    line_image = create_vertical_lines([720, 1280], 16, 616)
-    line_image.save("center_line.png")
+    line_image = create_vertical_lines([768, 1024], 16, 236)
+    line_image.save("five_lines.png")
+    #line_image = create_vertical_lines([720, 1280], 16, 616)
+    #line_image.save("center_line.png")
     #line_image = create_vertical_lines([512, 512], 16, 16)
     #line_image.save("vertical_lines_16.png")
     #line_image = create_horizontal_lines([512, 512], 16, 16)
