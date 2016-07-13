@@ -455,6 +455,8 @@ if __name__ == "__main__":
         # Search the parameter space to minimize differeces between measured
         # and calculated directions.
         parameters = estimate_parameters(projector_points)
+        parameters['projector_pixel_width'] = PROJECTOR_PIXEL_WIDTH
+        parameters['projector_pixel_height'] = PROJECTOR_PIXEL_HEIGHT
 
         # Save the centroid symmetry info, viewing direction errors, and
         # parameter values to a calibration_results file.
