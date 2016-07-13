@@ -10,8 +10,6 @@ from dome_projection import DomeProjection
 from dome_projection import NoViewingDirection
 
 NUM_PARAMETERS = 10
-PROJECTOR_PIXEL_WIDTH = 1280
-PROJECTOR_PIXEL_HEIGHT = 720
 
 
 def read_centroid_list(filename):
@@ -48,10 +46,14 @@ class ParameterSearch():
     the (u,v) projector coordinates in projector_points along with the viewing
     directions calculated for these points using the default parameter values
     """
-    def __init__(self, filename):
+    def __init__(self, filename, projector_pixel_width,
+                 projector_pixel_height):
         """ Create the graph used for manual parameter searching """
         # get the calibration directions and convert them to pitch and yaw
-        dome = DomeProjection()
+        self.projector_pixel_width = projector_pixel_width
+        self.projector_pixel_height = projector_pixel_height
+        dome = DomeProjection(projector_pixel_width = projector_pixel_width,
+                              projector_pixel_height = projector_pixel_height)
         directions = dome.calibration_directions
         x = array([direction[0] for direction in directions])
         y = array([direction[1] for direction in directions])
@@ -66,7 +68,7 @@ class ParameterSearch():
         # get the default parameter values
         self.parameters = dome.get_parameters()
         # setup the figure
-        fig = figure(x_range=[-100,100], y_range=(-10, 100))
+        fig = figure(x_range=[-180,180], y_range=(-10, 100))
         fig.axis.ticker = SingleIntervalTicker(interval=30)
         fig.grid.ticker = SingleIntervalTicker(interval=30)
         self.source = ColumnDataSource()
@@ -81,6 +83,8 @@ class ParameterSearch():
     def calc_view_directions(self, parameters):
         """ Calculate the viewing directions for projector_points using the
         given parameter values. """
+        parameters['projector_pixel_width'] = self.projector_pixel_width
+        parameters['projector_pixel_height'] = self.projector_pixel_height
         dome = DomeProjection(**parameters)
         estimated_directions = [zeros(3)]*len(self.actual_directions)
         for i in range(len(self.projector_points)):

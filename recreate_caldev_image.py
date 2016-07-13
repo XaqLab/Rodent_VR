@@ -6,7 +6,7 @@ import sys
 #PROJECTOR_PIXEL_HEIGHT = 720
 PROJECTOR_PIXEL_WIDTH = 1024
 PROJECTOR_PIXEL_HEIGHT = 768
-GREEN = array([0, 128, 0], dtype=uint8)
+GREEN = array([0, 255, 0], dtype=uint8)
 
 centroids = zeros([22,2])
 # Read the centroids from a text file
@@ -37,5 +37,5 @@ for centroid in centroids:
         pixels[row + 1, col + 1] = GREEN
 
 image = Image.fromarray(array(pixels, dtype=uint8), mode='RGB')
-image.save("caldev_image.png", "png")
+image.save("recreated_caldev_image.png", "png")
 
