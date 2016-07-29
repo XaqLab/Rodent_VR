@@ -1,9 +1,0 @@
-('Z:\\Users\\jwbwater\\BCM\\FireflyProject\\DomeProjection\\Python\\domecal_exe\\dist\\domecal.exe',
- True,
- False,
- None,
- None,
- [],
- None,
- False,
- 1445897127L)
