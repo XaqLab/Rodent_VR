@@ -26,7 +26,7 @@ python dome_calibration.py centroid_list.txt
 # import stuff from standard libraries
 import sys
 from datetime import datetime
-from numpy import pi, arcsin, arctan2
+from numpy import pi, sin, cos, arcsin, arctan2
 from numpy import array, uint8, zeros
 from numpy.linalg import norm
 from PIL import Image
@@ -66,13 +66,36 @@ def get_projector_resolution():
     return PROJECTOR_PIXEL_WIDTH, PROJECTOR_PIXEL_HEIGHT
 
 
+def compute_directions(pitch_angles, yaw_angles):
+    """ Returns the directions used for calibration.
+    For our 3D printed calibration device pitch_angles is [60, 30, 0, -15] and
+    yaw_angles is [-120, -90, -60, -30, 0, 30, 60, 90, 120] or they are a
+    subset of these. """
+    calibration_directions = []
+    # add straight up
+    calibration_directions.append([0, 0, 1])
+    for pitch in pitch_angles:
+        for yaw in yaw_angles:
+            x = sin(yaw * pi/180) * cos(pitch * pi/180)
+            y = cos(yaw * pi/180) * cos(pitch * pi/180)
+            z = sin(pitch * pi/180)
+            calibration_directions.append([x, y, z])
+    return calibration_directions
+
+
 def check_point_symmetry(points):
     """ Check the symmetry of the points in the projector image to be used
     for calibration.  This will give us an idea of how well aligned the
     projection system is.  """
     # get the calibration directions from DomeProjection
     dome = DomeProjection()
-    calibration_directions = dome.calibration_directions
+    if len(points) == 22:  # 3 rows of 7 plus one over head
+        pitch_angles = [60, 30, 0]
+        yaw_angles = [-90, -60, -30, 0, 30, 60, 90]
+    elif len(points) == 37:  # 4 rows of 9 plus one over head
+        pitch_angles = [60, 30, 0, -15]
+        yaw_angles = [-120, -90, -60, -30, 0, 30, 60, 90, 120]
+    calibration_directions = compute_directions(pitch_angles, yaw_angles)
     
     # compare zero yaw points
     print "Zero yaw points:"
@@ -237,7 +260,14 @@ def dome_distortion(x, projector_points):
         directions are determined by the 3D printed calibration device.
         """
         dome = DomeProjection(**parameters)
-        actual_directions = dome.calibration_directions
+        if len(projector_points) == 22:  # 3 rows of 7 plus one over head
+            pitch_angles = [60, 30, 0]
+            yaw_angles = [-90, -60, -30, 0, 30, 60, 90]
+        elif len(projector_points) == 37:  # 4 rows of 9 plus one over head
+            pitch_angles = [60, 30, 0, -15]
+            yaw_angles = [-120, -90, -60, -30, 0, 30, 60, 90, 120]
+        actual_directions = compute_directions(pitch_angles, yaw_angles)
+    
         """
         Calculate the viewing directions for projector_points using these
         parameter estimates.
@@ -369,7 +399,9 @@ def save_calibration_image(parameters, datetime_string):
     GREEN = array([0, 255, 0], dtype=uint8)
     
     dome = DomeProjection(**parameters)
-    calibration_directions = dome.calibration_directions
+    pitch_angles = [60, 30, 0, -15]
+    yaw_angles = [-120, -90, -60, -30, 0, 30, 60, 90, 120]
+    calibration_directions = compute_directions(pitch_angles, yaw_angles)
     pickle_filename = 'calibration_image.pkl'
     try:
         # see if there are previously found centroids that we can use as an initial

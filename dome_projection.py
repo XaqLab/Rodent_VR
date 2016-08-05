@@ -138,20 +138,6 @@ class DomeProjection:
         self._animal_position = animal_position
 
         #######################################################################
-        # Properties used for calibration
-        #######################################################################
-        # make a list of the desired directions for calibration
-        self.calibration_directions = []
-        # add straight up
-        self.calibration_directions.append([0, 0, 1])
-        for pitch in [60, 30, 0]:
-            for yaw in [-90, -60, -30, 0, 30, 60, 90]:
-                x = sin(yaw * pi/180) * cos(pitch * pi/180)
-                y = cos(yaw * pi/180) * cos(pitch * pi/180)
-                z = sin(pitch * pi/180)
-                self.calibration_directions.append([x, y, z])
-    
-        #######################################################################
         # Properties used to share results between method calls
         #######################################################################
 
