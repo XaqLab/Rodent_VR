@@ -5,7 +5,7 @@ SLOW. This could be fixed by coding up an analytical reverse mapping. """
 from dome_projection import DomeProjection
 from dome_calibration import compute_directions
 
-dome = DomeProjection(projector_pixel_width=1024, projector_pixel_height=768)
+dome = DomeProjection(projector_pixel_width=1920, projector_pixel_height=1080)
 
 pitch_angles = [60, 30, 0, -15]
 yaw_angles = [-120, -90, -60, -30, 0, 30, 60, 90, 120]

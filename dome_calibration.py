@@ -50,16 +50,21 @@ best_sum_of_errors = 100
 
 def get_projector_resolution():
     print "Please choose the projector's resolution from this list:"
-    print "1) 1280 by 720"
-    print "2) 1024 by 768"
+    print "1) 1920 by 1080"
+    print "2) 1280 by 720"
+    print "3) 1024 by 768"
     done = False
     while not done:
         choice = raw_input("Choice: ")
         if "1" in choice:
+            PROJECTOR_PIXEL_WIDTH = 1920
+            PROJECTOR_PIXEL_HEIGHT = 1080
+            done = True
+        elif "2" in choice:
             PROJECTOR_PIXEL_WIDTH = 1280
             PROJECTOR_PIXEL_HEIGHT = 720
             done = True
-        elif "2" in choice:
+        elif "3" in choice:
             PROJECTOR_PIXEL_WIDTH = 1024
             PROJECTOR_PIXEL_HEIGHT = 768
             done = True
@@ -69,8 +74,8 @@ def get_projector_resolution():
 def compute_directions(pitch_angles, yaw_angles):
     """ Returns the directions used for calibration.
     For our 3D printed calibration device pitch_angles is [60, 30, 0, -15] and
-    yaw_angles is [-120, -90, -60, -30, 0, 30, 60, 90, 120] or they are a
-    subset of these. """
+    yaw_angles is [-120, -90, -60, -30, 0, 30, 60, 90, 120] or they are
+    subsets of these. """
     calibration_directions = []
     # add straight up
     calibration_directions.append([0, 0, 1])
