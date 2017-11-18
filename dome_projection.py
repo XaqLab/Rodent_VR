@@ -3,17 +3,16 @@
 
 """
 This class modifies (a.k.a. warps) images from OpenGL for display on a
-hemispherical screen in a virtual reality system.  A hemispherical mirror is
+hemispherical screen in a virtual reality system.  A quarter sphere mirror is
 used to allow a single projector to achieve a very wide field of view.  The
-goal in our mouse experiments is to achieve a minimum field of view of -20
-degrees to 60 degrees verically and -135 to 135 degrees horizontally.  The
+goal in our mouse experiments is to achieve a minimum field of view of -15
+degrees to 75 degrees verically and -135 to 135 degrees horizontally.  The
 OpenGL images are modified to eliminate the distortion introduced by the
-hemispherical mirror and the hemispherical screen.  This is achieved by a
+quarter sphere mirror and the hemispherical screen.  This is achieved by a
 pixel level mapping which sets the RGB values for each projector pixel using
 the RGB values of the pixel in the OpenGL image which is in the same direction
 from the viewer's point of view.  The viewer in the dome display is the mouse
-and the viewers in OpenGL are virtual cameras.  
-"""
+and the viewers in OpenGL are virtual cameras.  """
 
 DEBUG = False
 
@@ -47,7 +46,7 @@ class DomeProjection:
     virtual camera and screen.
     All vectors in the OpenGL world are relative to the virtual camera and
     all vectors in the dome display setup are relative to the center of the
-    hemispherical mirror.
+    mirror.
     """
     def __init__(self,
                  screen_height = [1.0, 1.0, 1.0],
@@ -264,7 +263,7 @@ class DomeProjection:
             each OpenGL virtual camera towards all of the pixels in its image.
             """
             self._camera_view_directions = \
-                [flat_display_directions(self._screen_height[i],
+               [flat_display_directions(self._screen_height[i],
                                          self._screen_width[i],
                                          self._image_pixel_height[i],
                                          self._image_pixel_width[i],
@@ -325,7 +324,6 @@ class DomeProjection:
                     # the mirror and missed the dome
                     self._projector_mask[row, column] = 0
                     self._animal_view_directions[row, column] = None
-
 
 
     def dome_display_direction(self, u, v):
@@ -456,35 +454,6 @@ class DomeProjection:
         animal_view_direction = animal_view_vector/magnitude
 
         return animal_view_direction
-
-
-    def _calc_projector_focal_point(self):
-        """
-        Calculate the position of the projector's focal point.  The projector
-        image is horizontally centered on the mirror so the x-component
-        of the focal point's position is zero.  Calculate the intersection
-        point of the lines along the top and bottom of the projected light to
-        get the focal point's y and z coordinates.
-        """
-        # calculate slope of line along top of projected light
-        upper_z1 = self._first_projector_image[0][2]
-        upper_z2 = self._second_projector_image[0][2]
-        y1 = self._first_projector_image[0][1]
-        y2 = self._second_projector_image[0][1]
-        upperSlope = (upper_z2 - upper_z1)/(y2 - y1)
-
-        # calculate slope of line along bottom of projected light
-        lower_z1 = self._first_projector_image[2][2]
-        lower_z2 = self._second_projector_image[2][2]
-        lowerSlope = (lower_z2 - lower_z1)/(y2 - y1)
-
-        # calculate y and z where the lines intersect
-        a = array([[upperSlope, -1], [lowerSlope, -1]])
-        b = array([upperSlope*y1 - upper_z1, lowerSlope*y1 - lower_z1])
-        [y, z] = linalg.solve(a, b)
-        projector_focal_point = array([0, y, z])
-
-        return projector_focal_point
 
 
     def _calc_contributing_pixels(self):
@@ -653,35 +622,6 @@ class DomeProjection:
         image.save(filename, "png")
 
 
-    def get_mirror_radius(self):
-        return self._mirror_radius
-
-
-    def get_dome_radius(self):
-        return self._dome_radius
-
-
-    def get_dome_position(self):
-        return self._dome_center
-
-
-    def get_animal_position(self):
-        return self._animal_position
-
-
-    def get_frustum_parameters(self):
-        """
-        This funciton calculates the y and z coordinates of the projector's focal
-        point along with it's horizontal field of view, and it's vertical throw.
-        """
-        y = self._projector_focal_point[1]
-        z = self._projector_focal_point[2]
-        theta = self._projector_theta
-        vertical_offset = self._projector_vertical_offset
-
-        return [theta, vertical_offset, y, z]
-
-
     def get_parameters(self):
         """ return a dictionary of parameters """
         parameters = dict(image_pixel_width = self._image_pixel_width,
@@ -828,73 +768,4 @@ def flat_display_direction(u, v, screen_height, screen_width,
     direction = vector_to_pixel / linalg.norm(vector_to_pixel)
 
     return direction
-
-
-###############################################################################
-# Functions called by dome_calibration.py and domecal.py
-###############################################################################
-
-def calc_projector_images(y, z, theta, vertical_offset):
-    """
-    Calculate the two projector_image parameters that were originally used to
-    characterize the projector frsutum.  This function is only here to
-    facillitate sending parameter values to Jian who ported the dome_projection
-    class to C++ when it used these parameters.
-    """
-    # distance to first image, chosen to match measurements
-    y1 = 0.436
-    # calculate x from theta and the distance between the focal point and image
-    x1 = (y - y1) * tan(theta)
-    # calculate z by assuming a 16:9 aspect ratio 
-    z1_low = (y - y1)*vertical_offset + z
-    z1_high = z1_low + 2 * 9.0/16.0 * x1
-    image1 = [[ -x1,  y1,  z1_high ],
-              [  x1,  y1,  z1_high ],
-              [  x1,  y1,  z1_low ],
-              [ -x1,  y1,  z1_low ]]
-
-    # do it again for image2
-    y2 = 0.265
-    x2 = (y - y2) * tan(theta)
-    slope = vertical_offset
-    z2_low = z + slope * (y - y2)
-    z2_high = z2_low + 2 * 9.0/16.0 * x2
-    image2 = [[ -x2,  y2,  z2_high ],
-              [  x2,  y2,  z2_high ],
-              [  x2,  y2,  z2_low ],
-              [ -x2,  y2,  z2_low ]]
-    
-    return [image1, image2]
-
-
-def calc_frustum_parameters(image1, image2):
-    """
-    Inverse of calc_projector_images.
-    This funciton calculates the y and z coordinates of the projector's focal
-    point along with it's horizontal field of view, and it's vertical throw.
-    This is done to reduce the degrees of freedom to the minimum necessary for
-    parameter estimation using SciPy's minimization routine.
-    """
-    # calculate vertical_offset
-    y1 = image1[1][1]
-    y2 = image2[1][1]
-    z1_low = image1[2][2]
-    z2_low = image2[2][2]
-    slope = (z2_low - z1_low) / (y1 - y2)
-    vertical_offset = slope
-
-    # calculate theta
-    x1 = image1[1][0]
-    x2 = image2[1][0]
-    theta = arctan((x2 - x1) / (y1 - y2))
-
-    # calculate y
-    y = y1 + x1 / tan(theta)
-
-    # calculate z
-    slope = vertical_offset
-    z = z1_low - slope * (y - y1)
-    
-    return [y, z, theta, vertical_offset]
-
 

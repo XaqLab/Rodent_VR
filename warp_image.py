@@ -6,7 +6,7 @@ from dome_projection import DomeProjection
 import sys
 import re
 
-DEBUG = False
+DEBUG = True
 
 # Choose a VR system, rat or mouse.
 #system = "rat"
@@ -32,8 +32,8 @@ if system == "rat":
         "distance_to_screen": [0.3*image_size[1]]*num_images,
         "pitch": [10]*num_images,
         "yaw": yaw,
-        "image_pixel_width": [image_size[0]]*3,
-        "image_pixel_height": [image_size[1]]*3,
+        "image_pixel_width": [image_size[0]]*num_images,
+        "image_pixel_height": [image_size[1]]*num_images,
         "projector_pixel_width": 1920,
         "projector_pixel_height": 1080
     }
@@ -50,11 +50,11 @@ elif system == "mouse":
         "projector_vertical_offset": 0.211,
         "screen_height": [image_size[1]]*num_images,
         "screen_width": [image_size[0]]*num_images,
-        "distance_to_screen": [2.5*image_size[1]]*num_images,
+        "distance_to_screen": [1.0*image_size[1]]*num_images,
         "pitch": [10]*num_images,
         "yaw": yaw,
-        "image_pixel_width": [image_size[0]]*3,
-        "image_pixel_height": [image_size[1]]*3,
+        "image_pixel_width": [image_size[0]]*num_images,
+        "image_pixel_height": [image_size[1]]*num_images,
         "projector_pixel_width": 1280,
         "projector_pixel_height": 720
     }
@@ -79,7 +79,7 @@ for filepath in sys.argv[1:]:
         dome = DomeProjection(**parameters(dome_image_size, num_images, yaw))
         print "Done initializing dome"
     
-    output_image = dome.warp_image_for_dome([input_image]*3)
+    output_image = dome.warp_image_for_dome([input_image]*num_images)
     
     # save warped image
     output_image.save(directory + "warped_" + filename, filetype)
