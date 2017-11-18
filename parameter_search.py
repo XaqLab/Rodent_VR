@@ -2,9 +2,6 @@ import sys
 from numpy import array, zeros
 from numpy import pi, arcsin, arctan2
 from numpy.linalg import norm
-#from bokeh.plotting import figure, show
-#from bokeh.models import ColumnDataSource, SingleIntervalTicker
-#from bokeh.io import push_notebook
 
 import matplotlib.pyplot as plt
 
@@ -80,18 +77,10 @@ class ParameterSearch():
         # get the default parameter values
         self.parameters = dome.get_parameters()
         # setup the figure
-        #fig = figure(x_range=[-180,180], y_range=(-10, 100))
-        #fig.axis.ticker = SingleIntervalTicker(interval=30)
-        #fig.grid.ticker = SingleIntervalTicker(interval=30)
-        #self.source = ColumnDataSource()
-        #fig.circle(actual_yaw, actual_pitch)# source=self.source)
         directions = self.calc_view_directions(self.parameters)
         estimated_pitch, estimated_yaw = directions_to_angles(directions)
         self.fig = plt.figure()
         axes = self.fig.add_subplot(111)
-        #fig.circle(x=estimated_yaw, y=estimated_pitch, color="orange")
-                   #source=self.source)
-        #self.handle = show(fig, notebook_handle=True)
         axes.plot(actual_yaw, actual_pitch, "ro")
         self.dots, = axes.plot(estimated_yaw, estimated_pitch, "bo")
 
@@ -137,16 +126,9 @@ class ParameterSearch():
         estimated_directions = self.calc_view_directions(parameters)
         pitch, yaw = directions_to_angles(estimated_directions)
         # update the data
-        #self.source.data['x'] = yaw
-        #self.source.data['y'] = pitch
-        #self.source.push_notebook()
-        #push_notebook(handle=self.handle)
         self.dots.set_xdata(yaw)
         self.dots.set_ydata(pitch)
         self.fig.canvas.draw()
-        #img.set_data(dat)
-        #img.autoscale()
-        #display(fig)
 
         """
         Calculate the length of the difference between each actual direction
@@ -155,14 +137,8 @@ class ParameterSearch():
         """
         sum_of_errors = 0
         for i, actual_direction in enumerate(self.actual_directions):
-            #[x, y, z] = actual_direction
-            #yaw = 180/pi*arctan2(x, y)
-            #pitch = 180/pi*arcsin(z)
             error = norm(actual_direction - estimated_directions[i])
             sum_of_errors = sum_of_errors + error
-            #[x, y, z] = estimated_directions[i]
-            #est_yaw = 180/pi*arctan2(x, y)
-            #est_pitch = 180/pi*arcsin(z)
-        return sum_of_errors
+        return "Sum of errors:" + str(sum_of_errors)
 
 
