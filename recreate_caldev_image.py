@@ -2,6 +2,13 @@ from numpy import array, zeros, uint8
 from PIL import Image
 import sys
 
+"""
+Create an image with green dots in the projector's image that correspond to the
+viewing directions from the calibration device. After calibration these green
+dots should be very close to the center of the spots from the calibration
+device.
+"""
+
 #PROJECTOR_PIXEL_WIDTH = 1280
 #PROJECTOR_PIXEL_HEIGHT = 720
 PROJECTOR_PIXEL_WIDTH = 1024

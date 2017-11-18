@@ -1,13 +1,19 @@
+import sys
 from numpy import array, zeros
 from numpy import pi, arcsin, arctan2
 from numpy.linalg import norm
-from bokeh.plotting import figure, show
-from bokeh.models import ColumnDataSource, SingleIntervalTicker
-from bokeh.io import push_notebook
+#from bokeh.plotting import figure, show
+#from bokeh.models import ColumnDataSource, SingleIntervalTicker
+#from bokeh.io import push_notebook
+
+import matplotlib.pyplot as plt
+
+from IPython.display import display, clear_output
 
 # import dome projection stuff
 from dome_projection import DomeProjection
 from dome_projection import NoViewingDirection
+from dome_calibration import compute_directions
 
 NUM_PARAMETERS = 10
 
@@ -28,7 +34,7 @@ def read_centroid_list(filename):
         #print centroid_list
     except:
         print "Error reading list of centroids from", filename
-        exit()
+        sys.exit()
     return centroid_list
 
 
@@ -54,7 +60,13 @@ class ParameterSearch():
         self.projector_pixel_height = projector_pixel_height
         dome = DomeProjection(projector_pixel_width = projector_pixel_width,
                               projector_pixel_height = projector_pixel_height)
-        directions = dome.calibration_directions
+        # 3 rows of 7 plus one over head
+        pitch_angles = [60, 30, 0]
+        yaw_angles = [-90, -60, -30, 0, 30, 60, 90]
+        # 4 rows of 9 plus one over head
+        #pitch_angles = [60, 30, 0, -15]
+        #yaw_angles = [-120, -90, -60, -30, 0, 30, 60, 90, 120]
+        directions = compute_directions(pitch_angles, yaw_angles)
         x = array([direction[0] for direction in directions])
         y = array([direction[1] for direction in directions])
         z = array([direction[2] for direction in directions])
@@ -68,16 +80,20 @@ class ParameterSearch():
         # get the default parameter values
         self.parameters = dome.get_parameters()
         # setup the figure
-        fig = figure(x_range=[-180,180], y_range=(-10, 100))
-        fig.axis.ticker = SingleIntervalTicker(interval=30)
-        fig.grid.ticker = SingleIntervalTicker(interval=30)
-        self.source = ColumnDataSource()
-        fig.circle(actual_yaw, actual_pitch)# source=self.source)
+        #fig = figure(x_range=[-180,180], y_range=(-10, 100))
+        #fig.axis.ticker = SingleIntervalTicker(interval=30)
+        #fig.grid.ticker = SingleIntervalTicker(interval=30)
+        #self.source = ColumnDataSource()
+        #fig.circle(actual_yaw, actual_pitch)# source=self.source)
         directions = self.calc_view_directions(self.parameters)
         estimated_pitch, estimated_yaw = directions_to_angles(directions)
-        fig.circle(estimated_yaw, estimated_pitch, color="orange",
-                        source=self.source)
-        show(fig)
+        self.fig = plt.figure()
+        axes = self.fig.add_subplot(111)
+        #fig.circle(x=estimated_yaw, y=estimated_pitch, color="orange")
+                   #source=self.source)
+        #self.handle = show(fig, notebook_handle=True)
+        axes.plot(actual_yaw, actual_pitch, "ro")
+        self.dots, = axes.plot(estimated_yaw, estimated_pitch, "bo")
 
 
     def calc_view_directions(self, parameters):
@@ -121,10 +137,16 @@ class ParameterSearch():
         estimated_directions = self.calc_view_directions(parameters)
         pitch, yaw = directions_to_angles(estimated_directions)
         # update the data
-        self.source.data['x'] = yaw
-        self.source.data['y'] = pitch
+        #self.source.data['x'] = yaw
+        #self.source.data['y'] = pitch
         #self.source.push_notebook()
-        push_notebook()
+        #push_notebook(handle=self.handle)
+        self.dots.set_xdata(yaw)
+        self.dots.set_ydata(pitch)
+        self.fig.canvas.draw()
+        #img.set_data(dat)
+        #img.autoscale()
+        #display(fig)
 
         """
         Calculate the length of the difference between each actual direction

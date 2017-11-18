@@ -1,6 +1,11 @@
 #!/usr/local/bin/python
 # written for python 2.7.8
 
+"""
+Modify images from three virtual cameras to make images suitable for projection
+in our rodent VR system.
+"""
+
 from PIL import Image
 from dome_projection import DomeProjection
 from os import listdir
