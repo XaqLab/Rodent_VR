@@ -1,6 +1,6 @@
 import sys
 from numpy import array, zeros
-from numpy import pi, arcsin, arctan2
+from numpy import pi, sin, cos, arcsin, arctan2
 from numpy.linalg import norm
 
 import matplotlib.pyplot as plt
@@ -43,6 +43,15 @@ def directions_to_angles(directions):
     yaw = 180/pi*arctan2(x,y)
     return pitch, yaw
 
+def polar(yaw, pitch):
+    """ Convert yaw and pitch into polar coordinates where yaw is the angle and
+    90 - pitch is the distance. """
+    r = 90 - pitch
+    theta = (yaw + 90)*pi/180
+    x = r * cos(theta)
+    y = r * sin(theta)
+    return x, y
+
 
 class ParameterSearch():
     """ Create and update a graph that shows the actual viewing directions of
@@ -81,8 +90,11 @@ class ParameterSearch():
         estimated_pitch, estimated_yaw = directions_to_angles(directions)
         self.fig = plt.figure()
         axes = self.fig.add_subplot(111)
-        axes.plot(actual_yaw, actual_pitch, "ro")
-        self.dots, = axes.plot(estimated_yaw, estimated_pitch, "bo")
+        # plot yaw and pitch in polar coordinates
+        x, y = polar(actual_yaw, actual_pitch)
+        axes.plot(x, y, "ro")
+        x, y = polar(estimated_yaw, estimated_pitch)
+        self.dots, = axes.plot(x, y, "bo")
 
 
     def calc_view_directions(self, parameters):
@@ -126,8 +138,9 @@ class ParameterSearch():
         estimated_directions = self.calc_view_directions(parameters)
         pitch, yaw = directions_to_angles(estimated_directions)
         # update the data
-        self.dots.set_xdata(yaw)
-        self.dots.set_ydata(pitch)
+        x, y = polar(yaw, pitch)
+        self.dots.set_xdata(x)
+        self.dots.set_ydata(y)
         self.fig.canvas.draw()
 
         """
