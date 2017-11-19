@@ -1,3 +1,10 @@
+"""
+A bare bones Windows GUI that allows the user to move green dots around in the
+projector image. This enables the user to locate the center of each spot of
+white light emitted by the calibration device. The coordinates of the center of
+each green spot is saved to a file which is then used in a numerical
+optimization to estimate the geometric properties of the VR system.
+"""
 # import stuff from numpy
 from numpy import pi, sin, cos
 
