@@ -5,16 +5,18 @@ Calculate the geometric parameters of our dome projection system from
 a list of centroids belonging to spots in a projected image that match the
 viewing directions of light produced by a 3D printed calibration device.
 
-A calibration image is generated using caldev.exe such that the green spots in
+A calibration image is generated using caldev.exe such that the green dots in
 the projector image are in the center of the white spots produced by a 3D
 printed calibration device that emits light in known directions and is placed
-at the animal's viewing position.  Since the center point of each object is
+at the animal's viewing position.  Since the center point of each green dot is
 known, this provides the mapping from the set of center points to their
 corresponding viewing directions.  The viewing direction for each center point
 is also calculated using estimated parameter values and a minimization routine
-is used to search for the true parameter values by minimizing the sum of the
-lengths of the difference vectors between the actual viewing directions and
-the estimated viewing directions.
+is used to search for the true parameter values. Vectors representing the
+difference between the actual viewing directions and the estimated viewing
+directions are computed and the lengths of these vectors are squared and then
+summed. This minimization routine estimates the geometric parameters of the
+system by minimizing this sum.
 
 To calculate the dome projection parameters, call this script with the file
 saved from caldev.exe which contains a list of spot centroids.  Like this:
