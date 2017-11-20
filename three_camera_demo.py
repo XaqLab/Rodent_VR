@@ -29,6 +29,6 @@ for filename in filenames:
                                                  right_image])
         output_filename = "warped_" + filename
         print "Saving warped image to:", output_filename
-        output_image.save(directory + output_filename, "jpeg")
+        output_image.save(directory + "warped/" + output_filename, "jpeg")
         
         
