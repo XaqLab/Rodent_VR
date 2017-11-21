@@ -43,6 +43,7 @@ def directions_to_angles(directions):
     yaw = 180/pi*arctan2(x,y)
     return pitch, yaw
 
+
 def polar(yaw, pitch):
     """ Convert yaw and pitch into polar coordinates where yaw is the angle and
     90 - pitch is the distance. """
@@ -151,9 +152,6 @@ class ParameterSearch():
         self.dots.set_xdata(x)
         self.dots.set_ydata(y)
         self.fig.canvas.draw()
-
-
-
         """
         Calculate the length of the difference between each actual direction
         and it's corresponding estimated direction.  Return the sum of these

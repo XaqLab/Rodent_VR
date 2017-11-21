@@ -1,0 +1,1 @@
+{'projector_z': 0.044, 'projector_vertical_offset': 0.1, 'projector_theta': 0.2, 'mirror_radius': 0.18, 'projector_y': 0.859, 'dome_z': 0.319, 'dome_y': 0.019, 'projector_roll': 0.0, 'animal_y': 0.019, 'dome_radius': 0.7, 'animal_z': 0.491}

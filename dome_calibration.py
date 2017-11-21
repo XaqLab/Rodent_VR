@@ -196,7 +196,8 @@ def print_parameters(parameters):
     print "'projector_z':%.3f," % parameters['projector_focal_point'][2]
     print "'projector_roll':%.3f," % parameters['projector_roll']
     print "'projector_theta':%.3f," % parameters['projector_theta']
-    print "'projector_vertical_offset':%.3f}" % parameters['projector_vertical_offset']
+    print "'projector_vertical_offset':%.3f}" % \
+            parameters['projector_vertical_offset']
 
 
 def parameters_to_x(parameters):
@@ -330,7 +331,7 @@ def dome_distortion(x, projector_points):
     return sum_of_errors
 
 
-def estimate_parameters(projector_points):
+def estimate_parameters(projector_points, initial_parameters):
     """
     Search the parameter space to find values that minimize the sum of the
     length of the difference vectors between the measured directions, found
@@ -338,7 +339,7 @@ def estimate_parameters(projector_points):
     calculated directions.
     """
     # Setup initial values of the parameters
-    dome = DomeProjection()
+    dome = DomeProjection(**initial_parameters)
     parameters = dome.get_parameters()
     #from params_2015_11_04_17_16 import parameters # 1.7
     #from parameters_domecal import parameters # ??
@@ -455,11 +456,11 @@ def save_calibration_image(parameters, datetime_string):
 if __name__ == "__main__":
     """ Script was called from the command line so look for the arguments
     required to calculate the dome projection geometry """
-    if len(sys.argv) != 2:
+    if len(sys.argv) != 3:
         """ Wrong number of arguments, display usage message """
         print "Usage:"
         print
-        print sys.argv[0], "centroid_list.txt"
+        print sys.argv[0], "initial_parameters.txt", "green_dots.txt"
         print
 
     else:
@@ -469,10 +470,24 @@ if __name__ == "__main__":
         PROJECTOR_PIXEL_WIDTH = WIDTH
         PROJECTOR_PIXEL_HEIGHT = HEIGHT
 
-        """ The first argument is the name of a file containing the list of
+        """ Convert initial parameters from parameter_search.ipynb to the
+        dictionary format required by dome_projection.py """
+        parameter_filename = sys.argv[1]
+        parameter_file = open(parameter_filename)
+        parameter_dict = eval(parameter_file.read())
+        x = [parameter_dict['animal_y'], parameter_dict['animal_z'],
+             parameter_dict['dome_y'], parameter_dict['dome_z'],
+             parameter_dict['dome_radius'], parameter_dict['mirror_radius'],
+             parameter_dict['projector_y'], parameter_dict['projector_z'],
+             parameter_dict['projector_roll'],
+             parameter_dict['projector_theta'],
+             parameter_dict['projector_vertical_offset']]
+        initial_parameters = x_to_parameters(x)
+
+        """ The second argument is the name of a file containing the list of
         centroids corresponding to the spots projected by the calibration
         device. """
-        centroid_filename = sys.argv[1]
+        centroid_filename = sys.argv[2]
         """
         Read the list of centroids from the file specified by the first
         argument and convert them to (u,v) coordinates.  These (u,v) points are
@@ -493,7 +508,7 @@ if __name__ == "__main__":
 
         # Search the parameter space to minimize differeces between measured
         # and calculated directions.
-        parameters = estimate_parameters(projector_points)
+        parameters = estimate_parameters(projector_points, initial_parameters)
         parameters['projector_pixel_width'] = PROJECTOR_PIXEL_WIDTH
         parameters['projector_pixel_height'] = PROJECTOR_PIXEL_HEIGHT
 
@@ -503,6 +518,10 @@ if __name__ == "__main__":
 
         # Print out the estimated parameter values
         print_parameters(parameters)
+
+        # Save the estimated parameter values to a file
+        parameter_file = open("calibrated_parameters.txt", 'w')
+        parameter_file.write(str(parameters))
 
         # Generate an image that can be used to check the calibration.  It has
         # green spots that correspond to calibration_directions.
