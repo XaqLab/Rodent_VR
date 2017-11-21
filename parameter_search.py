@@ -66,12 +66,14 @@ class ParameterSearch():
         self.projector_pixel_height = projector_pixel_height
         dome = DomeProjection(projector_pixel_width = projector_pixel_width,
                               projector_pixel_height = projector_pixel_height)
-        # 3 rows of 7 plus one over head
-        pitch_angles = [60, 30, 0]
-        yaw_angles = [-90, -60, -30, 0, 30, 60, 90]
-        # 4 rows of 9 plus one over head
-        #pitch_angles = [60, 30, 0, -15]
-        #yaw_angles = [-120, -90, -60, -30, 0, 30, 60, 90, 120]
+        # get the projector centroids and convert them to (u,v) coordinates
+        centroids = read_centroid_list(filename)
+        if len(centroids) == 22:  # 3 rows of 7 plus one over head
+            pitch_angles = [60, 30, 0]
+            yaw_angles = [-90, -60, -30, 0, 30, 60, 90]
+        elif len(points) == 37:  # 4 rows of 9 plus one over head
+            pitch_angles = [60, 30, 0, -15]
+            yaw_angles = [-120, -90, -60, -30, 0, 30, 60, 90, 120]
         directions = compute_directions(pitch_angles, yaw_angles)
         x = array([direction[0] for direction in directions])
         y = array([direction[1] for direction in directions])
@@ -79,8 +81,6 @@ class ParameterSearch():
         self.actual_directions = directions
         actual_pitch = 180/pi*arcsin(z)
         actual_yaw = 180/pi*arctan2(x,y)
-        # get the projector centroids and convert them to (u,v) coordinates
-        centroids = read_centroid_list(filename)
         # convert (row, col) to (u,v)
         self.projector_points = [[c[1] + 0.5, c[0] + 0.5] for c in centroids]
         # get the default parameter values
@@ -90,9 +90,18 @@ class ParameterSearch():
         estimated_pitch, estimated_yaw = directions_to_angles(directions)
         self.fig = plt.figure()
         axes = self.fig.add_subplot(111)
+        self.fig.tight_layout()
+        self.fig.axes[0].get_xaxis().set_visible(False)
+        self.fig.axes[0].get_yaxis().set_visible(False)
+        plt.axis('off')
+        #self.fig.subplots_adjust(bottom=-0.5, top=1.5,
+                                 #left=0, right=1)
+        axes.set_aspect(1) # make sure a circle looks like a circle
         # plot yaw and pitch in polar coordinates
         x, y = polar(actual_yaw, actual_pitch)
         axes.plot(x, y, "ro")
+        axes.set_xlim([min(x) - 10, max(x) + 10])
+        axes.set_ylim([min(y) - 10, max(y) + 10])
         x, y = polar(estimated_yaw, estimated_pitch)
         self.dots, = axes.plot(x, y, "bo")
 
@@ -142,6 +151,8 @@ class ParameterSearch():
         self.dots.set_xdata(x)
         self.dots.set_ydata(y)
         self.fig.canvas.draw()
+
+
 
         """
         Calculate the length of the difference between each actual direction
