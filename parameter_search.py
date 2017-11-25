@@ -44,14 +44,11 @@ def directions_to_angles(directions):
     return pitch, yaw
 
 
-def polar(yaw, pitch):
-    """ Convert yaw and pitch into polar coordinates where yaw is the angle and
-    90 - pitch is the distance. """
-    r = 90 - pitch
-    theta = (yaw + 90)*pi/180
-    x = r * cos(theta)
-    y = r * sin(theta)
-    return x, y
+def yaw_label(i):
+    yaw = 30*i
+    if yaw > 180:
+        yaw = yaw - 360
+    return str(yaw)
 
 
 class ParameterSearch():
@@ -89,22 +86,29 @@ class ParameterSearch():
         # setup the figure
         directions = self.calc_view_directions(self.parameters)
         estimated_pitch, estimated_yaw = directions_to_angles(directions)
-        self.fig = plt.figure()
-        axes = self.fig.add_subplot(111)
-        self.fig.tight_layout()
-        self.fig.axes[0].get_xaxis().set_visible(False)
-        self.fig.axes[0].get_yaxis().set_visible(False)
-        plt.axis('off')
-        #self.fig.subplots_adjust(bottom=-0.5, top=1.5,
-                                 #left=0, right=1)
-        axes.set_aspect(1) # make sure a circle looks like a circle
         # plot yaw and pitch in polar coordinates
-        x, y = polar(actual_yaw, actual_pitch)
-        axes.plot(x, y, "ro")
-        axes.set_xlim([min(x) - 10, max(x) + 10])
-        axes.set_ylim([min(y) - 10, max(y) + 10])
-        x, y = polar(estimated_yaw, estimated_pitch)
-        self.dots, = axes.plot(x, y, "bo")
+        self.fig = plt.figure(figsize=(8, 6))
+        axes = self.fig.add_subplot(111, polar=True)
+        axes.text(x=53*pi/180, y=230, s="Viewing Directions", fontsize=12)
+        #axes.set_xlabel("Yaw")
+        #axes.set_ylabel("Pitch")
+        thetaticks = [30*i for i in range(12)]
+        axes.set_thetagrids(thetaticks, frac=1.1)
+        axes.set_rlabel_position(-150)
+        yaw_labels = axes.get_xticks().tolist()
+        for i in range(len(yaw_labels)):
+            yaw_labels[i] = yaw_label(i)
+        axes.set_xticklabels(yaw_labels)
+        axes.set_yticks([30, 60, 90, 105])
+        axes.set_yticklabels(["60", "30", "0", "-15"])
+        axes.set_ylim([0, 125])
+        axes.set_theta_offset(pi/2)
+        axes.plot(pi/180*(-actual_yaw), 90 - actual_pitch, "ro", label="actual")
+        self.dots, = axes.plot(pi/180*(-estimated_yaw), 90 - estimated_pitch,
+                               "bo", label="calculated")
+        handles, labels = axes.get_legend_handles_labels()
+        axes.legend(handles, labels)
+        plt.legend(bbox_to_anchor=(0.1, 1.05)) #, loc=2, borderaxespad=0.)
 
 
     def calc_view_directions(self, parameters):
@@ -148,9 +152,8 @@ class ParameterSearch():
         estimated_directions = self.calc_view_directions(parameters)
         pitch, yaw = directions_to_angles(estimated_directions)
         # update the data
-        x, y = polar(yaw, pitch)
-        self.dots.set_xdata(x)
-        self.dots.set_ydata(y)
+        self.dots.set_xdata(pi/180*(-yaw))
+        self.dots.set_ydata(90 - pitch)
         self.fig.canvas.draw()
         """
         Calculate the length of the difference between each actual direction
