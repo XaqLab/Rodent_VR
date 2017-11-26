@@ -8,31 +8,11 @@ import matplotlib.pyplot as plt
 from IPython.display import display, clear_output
 
 # import dome projection stuff
-from dome_projection import DomeProjection
-from dome_projection import NoViewingDirection
-from dome_calibration import compute_directions
+from dome_projection import DomeProjection, NoViewingDirection
+from dome_calibration import compute_directions, x_to_parameters,
+from dome_calibration import read_centroid_list
 
 NUM_PARAMETERS = 10
-
-
-def read_centroid_list(filename):
-    """ Read the list of centroids for the light colored spots in the
-    calibration image from a file saved using domecal.exe.  """
-    try:
-        centroid_file = open(filename, 'r')
-        centroid_list = []
-        for line in centroid_file:
-            try:
-                row, column = line.split(", ")
-                centroid_list.append([float(row), float(column)])
-            except:
-                # ignore other lines in the file
-                pass
-        #print centroid_list
-    except:
-        print "Error reading list of centroids from", filename
-        sys.exit()
-    return centroid_list
 
 
 def directions_to_angles(directions):
@@ -49,6 +29,20 @@ def yaw_label(i):
     if yaw > 180:
         yaw = yaw - 360
     return str(yaw)
+
+
+def save_parameters(b, parameter_dict, projector_resolution, filename):
+    x = [parameter_dict['animal_y'], parameter_dict['animal_z'],
+         parameter_dict['dome_y'], parameter_dict['dome_z'],
+         parameter_dict['dome_radius'], parameter_dict['mirror_radius'],
+         parameter_dict['projector_y'], parameter_dict['projector_z'],
+         parameter_dict['projector_roll'],
+         parameter_dict['projector_theta'],
+         parameter_dict['projector_vertical_offset']]
+    initial_parameters = x_to_parameters(x, projector_resolution)
+    file = open(filename, 'w')
+    file.write(str(initial_parameters))
+    file.close()
 
 
 class ParameterSearch():
@@ -69,7 +63,7 @@ class ParameterSearch():
         if len(centroids) == 22:  # 3 rows of 7 plus one over head
             pitch_angles = [60, 30, 0]
             yaw_angles = [-90, -60, -30, 0, 30, 60, 90]
-        elif len(points) == 37:  # 4 rows of 9 plus one over head
+        elif len(centroids) == 37:  # 4 rows of 9 plus one over head
             pitch_angles = [60, 30, 0, -15]
             yaw_angles = [-120, -90, -60, -30, 0, 30, 60, 90, 120]
         directions = compute_directions(pitch_angles, yaw_angles)
@@ -87,14 +81,12 @@ class ParameterSearch():
         directions = self.calc_view_directions(self.parameters)
         estimated_pitch, estimated_yaw = directions_to_angles(directions)
         # plot yaw and pitch in polar coordinates
-        self.fig = plt.figure(figsize=(8, 6))
+        self.fig = plt.figure(figsize=(6, 4))
         axes = self.fig.add_subplot(111, polar=True)
         axes.text(x=53*pi/180, y=230, s="Viewing Directions", fontsize=12)
-        #axes.set_xlabel("Yaw")
-        #axes.set_ylabel("Pitch")
         thetaticks = [30*i for i in range(12)]
         axes.set_thetagrids(thetaticks, frac=1.1)
-        axes.set_rlabel_position(-150)
+        axes.set_rlabel_position(-60)
         yaw_labels = axes.get_xticks().tolist()
         for i in range(len(yaw_labels)):
             yaw_labels[i] = yaw_label(i)
