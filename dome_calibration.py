@@ -477,6 +477,7 @@ def save_calibration_image(sys_params, datetime_string, centroids):
             pixels[row + 1, col + 1] += GREEN
     image = Image.fromarray(array(pixels, dtype=uint8), mode='RGB')
     image.save(filename, "png")
+    image.show()
     print "Done."
     
     
@@ -543,13 +544,17 @@ if __name__ == "__main__":
         # Print out the estimated parameter values
         print_parameters(parameters)
 
-        # Save the estimated parameter values to a file
-        parameter_file = open("calibrated_parameters.txt", 'w')
+        # Save the calibrated parameter values to a file
+        datetime_string = datetime.now().strftime("%Y_%m_%dT%H_%M_%S")
+        parameter_file = open("calibrated_parameters_" + datetime_string
+                              + ".txt", 'w')
         parameter_file.write(str(parameters))
 
         # Generate an image that can be used to check the calibration.  It has
-        # green spots that correspond to calibration_directions.
-        datetime_string = datetime.now().strftime("%Y_%m_%dT%H_%M_%S")
+        # the green spots from caldev.exe and blue spots that are mapped to the
+        # calibration directions by the calibrated parameters. If the
+        # calibration is perfect these blue and green dots will be on top of
+        # one another.
         save_calibration_image(parameters, datetime_string,
                                projector_centroids)
 

@@ -9,10 +9,8 @@ from IPython.display import display, clear_output
 
 # import dome projection stuff
 from dome_projection import DomeProjection, NoViewingDirection
-from dome_calibration import compute_directions, x_to_parameters,
+from dome_calibration import compute_directions, x_to_parameters
 from dome_calibration import read_centroid_list
-
-NUM_PARAMETERS = 10
 
 
 def directions_to_angles(directions):
